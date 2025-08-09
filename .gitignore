@@ -37,3 +37,6 @@ Results/
 .idea
 node_modules/
 **/Properties/launchSettings.json
+__pycache__/
+*.py[cod]
+*$py.class

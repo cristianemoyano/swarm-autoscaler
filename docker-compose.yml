@@ -1,0 +1,19 @@
+services:
+  autoscaler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: swarm-autoscaler:dev
+    container_name: swarm-autoscaler-dev
+    environment:
+      - AUTOSCALER_DNSNAME=autoscaler
+      - AUTOSCALER_INTERVAL=30
+      - AUTOSCALER_DRYRUN=1
+    volumes:
+      - ./src:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+
