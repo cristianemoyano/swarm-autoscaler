@@ -5,6 +5,7 @@ from discovery import Discovery
 from cache import Cache
 import os
 import logging
+import multiprocessing
 
 # Configuration
 MIN_PERCENTAGE = float(os.getenv("AUTOSCALER_MIN_PERCENTAGE")) if os.getenv("AUTOSCALER_MIN_PERCENTAGE") else 25.0
@@ -29,8 +30,18 @@ DiscoveryService = Discovery(DISCOVERY_DNSNAME, MemoryCache, CHECK_INTERVAL)
 # Import controllers
 from container_controller import *
 
-if __name__ == "__main__":
+def _start_autoscaler_thread():
     autoscalerService = AutoscalerService(SwarmService, DiscoveryService, CHECK_INTERVAL, MIN_PERCENTAGE, MAX_PERCENTAGE)
-    autoscalerService.setDaemon(True)
+    autoscalerService.daemon = True
     autoscalerService.start()
+
+# Start autoscaler when the first worker process loads the app
+if os.getenv("GUNICORN_WORKER_ID", "1") == "1":
+    try:
+        _start_autoscaler_thread()
+    except Exception:
+        logging.getLogger("main").exception("Failed to start autoscaler thread")
+
+if __name__ == "__main__":
+    _start_autoscaler_thread()
     App.run(host='0.0.0.0', port=80)
