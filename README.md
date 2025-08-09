@@ -38,6 +38,7 @@ deploy:
   resources:
     limits:
       cpus: '0.50'
+      memory: '256M'
 ```
 
 ## Configuration
@@ -67,6 +68,7 @@ _**Services in docker swarm are configured via labels**_
 | `swarm.autoscale.percentage-max`          | Integer | `AUTOSCALER_MAX_PERCENTAGE` | Optional. Custom maximum service cpu utilization for increase replicas                                                                                                                     |
 | `swarm.autoscale.percentage-min`          | Integer | `AUTOSCALER_MIN_PERCENTAGE` | Optional. Custom minimum service cpu utilization for decrease replicas                                                                                                                     |
 | `swarm.autoscale.decrease-mode`           | String  | `MEDIAN`                    | Optional. Service utilization calculation mode to decrease replicas. Modes: `MEDIAN`, `MAX`                                                                                                |
+| `swarm.autoscale.metric`                  | String  | `cpu`                       | Optional. Metric used for autoscaling. Supported: `cpu`, `memory`                                                                                                                          |
 
 
 ## Local development
@@ -118,6 +120,13 @@ docker compose down
     curl "http://localhost:8080/api/container/stats?id=<container_id>&cpuLimit=0.5"
     ```
 
+- GET `/api/container/stats?id=<container_id>&metric=memory`:
+  - Returns memory usage percent calculated from Docker stats (`usage/limit*100`).
+  - Example:
+    ```bash
+    curl "http://localhost:8080/api/container/stats?id=<container_id>&metric=memory"
+    ```
+
 
 ## Logging
 
@@ -156,9 +165,11 @@ Make sure target services you want to autoscale have labels set (see table above
 deploy:
   labels:
     - "swarm.autoscale=true"
+    - "swarm.autoscale.metric=memory" # use memory metric instead of CPU
   resources:
     limits:
       cpus: '0.50'
+      memory: '256M'
 ```
 
 

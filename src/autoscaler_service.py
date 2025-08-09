@@ -7,6 +7,7 @@ from discovery import Discovery
 from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
+from constants import METRIC_CPU
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -38,7 +39,8 @@ class AutoscalerService(threading.Thread):
             time.sleep(self.checkInterval)
 
     def __autoscale(self, service):
-        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service)
+        serviceMetric = self.swarmService.getServiceMetric(service, METRIC_CPU)
+        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service) if serviceMetric == METRIC_CPU else -1
         containers = self.swarmService.getServiceContainersId(service)
 
         if(containers == None or len(containers) == 0):
@@ -47,9 +49,11 @@ class AutoscalerService(threading.Thread):
 
         stats = []
         for id in containers:
-            containerStats = self.discovery.getContainerStats(id, cpuLimit)
+            containerStats = self.discovery.getContainerStats(id, cpuLimit, serviceMetric)
             if(containerStats != None):
-                stats.append(containerStats['cpu'])
+                key = 'cpu' if serviceMetric == METRIC_CPU else 'memory'
+                if key in containerStats:
+                    stats.append(containerStats[key])
         if(len(stats) > 0):
             self.__scale(service, stats)
 
@@ -57,20 +61,20 @@ class AutoscalerService(threading.Thread):
         """
             Method where calculate median and max cpu percentage of service replicas and inc or dec replicas count
         """
-        meanCpu = statistics.median(stats)
-        maxCpu = max(stats)
+        meanValue = statistics.median(stats)
+        maxValue = max(stats)
 
         serviceMaxPercentage = self.swarmService.getServiceMaxPercentage(service, self.maxPercentage)
         serviceMinPercentage = self.swarmService.getServiceMinPercentage(service, self.minPercentage)
         serviceDecreaseMode = self.swarmService.getServiceDecreaseMode(service)
 
-        self.logger.debug("Mean cpu for service=%s : %s",service.name,meanCpu)
-        self.logger.debug("Max cpu for service=%s : %s",service.name,maxCpu)
+        self.logger.debug("Mean metric for service=%s : %s", service.name, meanValue)
+        self.logger.debug("Max metric for service=%s : %s", service.name, maxValue)
             
         try:
-            if(meanCpu > serviceMaxPercentage):
+            if(meanValue > serviceMaxPercentage):
                 self.swarmService.scaleService(service, True)
-            elif( (meanCpu if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxCpu) < serviceMinPercentage):
+            elif( (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue) < serviceMinPercentage):
                 self.swarmService.scaleService(service, False)
             else:
                 self.logger.debug("Service %s not needed to scale", service.name)

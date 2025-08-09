@@ -2,16 +2,28 @@
 import docker
 import logging
 from cache import Cache
+from constants import (
+    LABEL_AUTOSCALE,
+    LABEL_MAX_REPLICAS,
+    LABEL_MIN_REPLICAS,
+    LABEL_DISABLE_MANUAL_REPLICAS,
+    LABEL_PERCENTAGE_MAX,
+    LABEL_PERCENTAGE_MIN,
+    LABEL_DECREASE_MODE,
+    LABEL_METRIC,
+    METRIC_CPU,
+)
 from decrease_mode_enum import DecreaseModeEnum
 
 class DockerService(object):
-    AutoscaleLabel = 'swarm.autoscale'
-    MaxReplicasLabel = 'swarm.autoscale.max'
-    MinReplicasLabel = 'swarm.autoscale.min'
-    DisableManualReplicasControlLabel = 'swarm.autoscale.disable-manual-replicas'
-    MaxPercentageLabel = 'swarm.autoscale.percentage-max'
-    MinPercentageLabel = 'swarm.autoscale.percentage-min'
-    DecreaseModeLabel = 'swarm.autoscale.decrease-mode'
+    AutoscaleLabel = LABEL_AUTOSCALE
+    MaxReplicasLabel = LABEL_MAX_REPLICAS
+    MinReplicasLabel = LABEL_MIN_REPLICAS
+    DisableManualReplicasControlLabel = LABEL_DISABLE_MANUAL_REPLICAS
+    MaxPercentageLabel = LABEL_PERCENTAGE_MAX
+    MinPercentageLabel = LABEL_PERCENTAGE_MIN
+    DecreaseModeLabel = LABEL_DECREASE_MODE
+    MetricLabel = LABEL_METRIC  # cpu | memory (default: cpu)
 
     def __init__(self, memoryCache: Cache, dryRun: bool):
         self.memoryCache = memoryCache
@@ -72,12 +84,25 @@ class DockerService(object):
         except:
             return default
 
+    def getServiceMetric(self, service, default: str = METRIC_CPU):
+        try:
+            return service.attrs.get('Spec').get('Labels').get(self.MetricLabel, default).lower()
+        except:
+            return default
+
     def getContainerCpuStat(self, containerId, cpuLimit):
         containers = self.dockerClient.containers.list(filters={'id':containerId})
         if(len(containers) == 0):
             return None
         containerStats = containers[0].stats(stream=False)
         return self.__calculateCpu(containerStats, cpuLimit)
+
+    def getContainerMemoryStat(self, containerId):
+        containers = self.dockerClient.containers.list(filters={'id':containerId})
+        if(len(containers) == 0):
+            return None
+        containerStats = containers[0].stats(stream=False)
+        return self.__calculateMemory(containerStats)
 
     def scaleService(self, service, scaleIn = True):
         replicated = service.attrs['Spec']['Mode'].get('Replicated')
@@ -138,6 +163,18 @@ class DockerService(object):
         else:
             percent = percent / cpuCount
         return percent
+
+    def __calculateMemory(self, stats):
+        try:
+            memoryStats = stats.get('memory_stats', {})
+            usage = float(memoryStats.get('usage', 0.0))
+            limit = float(memoryStats.get('limit', 0.0))
+            if limit <= 0.0:
+                return 0.0
+            percent = (usage / limit) * 100.0
+            return percent
+        except Exception:
+            return 0.0
 
     def __getNodesCountCached(self):
         cacheKey = "nodes_count"

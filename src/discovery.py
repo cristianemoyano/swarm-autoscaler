@@ -17,9 +17,12 @@ class Discovery(object):
         if(os.name == 'nt'):
             self.addrInfoExpectedType = 0
 
-    def getContainerStats(self, containerId, cpuLimit):
-        return self.__sendToAll("/api/container/stats?id=%s&cpuLimit=%s" %
-                         (containerId, cpuLimit))
+    def getContainerStats(self, containerId, cpuLimit, metric: str = 'cpu'):
+        query = "/api/container/stats?id=%s" % containerId
+        if metric == 'cpu':
+            query += "&cpuLimit=%s" % cpuLimit
+        query += "&metric=%s" % metric
+        return self.__sendToAll(query)
 
     def __sendToAll(self, url):
         hosts = self.__getClusterHosts()
