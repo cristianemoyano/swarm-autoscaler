@@ -67,3 +67,110 @@ _**Services in docker swarm are configured via labels**_
 | `swarm.autoscale.percentage-max`          | Integer | `AUTOSCALER_MAX_PERCENTAGE` | Optional. Custom maximum service cpu utilization for increase replicas                                                                                                                     |
 | `swarm.autoscale.percentage-min`          | Integer | `AUTOSCALER_MIN_PERCENTAGE` | Optional. Custom minimum service cpu utilization for decrease replicas                                                                                                                     |
 | `swarm.autoscale.decrease-mode`           | String  | `MEDIAN`                    | Optional. Service utilization calculation mode to decrease replicas. Modes: `MEDIAN`, `MAX`                                                                                                |
+
+
+## Local development
+
+Run locally with Docker Compose (recommended):
+
+```bash
+docker compose build
+docker compose up -d
+open http://localhost:8080
+```
+
+What this does:
+- Builds an image using Python 3.13 and installs dependencies with `uv`.
+- Runs the app with Gunicorn on port 80 and maps it to `localhost:8080`.
+- Mounts your source code (`./src`) into the container for quick edits (with `--reload`).
+- Mounts the Docker socket so the autoscaler can talk to the local Docker daemon.
+- Runs in dry-run mode by default to avoid scaling actions during dev.
+
+Environment variables (as used in `docker-compose.yml`):
+
+```yaml
+services:
+  autoscaler:
+    environment:
+      - AUTOSCALER_DNSNAME=autoscaler
+      - AUTOSCALER_INTERVAL=30
+      - AUTOSCALER_DRYRUN=1   # remove to enable real scaling
+      # - LOG_LEVEL=INFO      # optional, defaults to DEBUG
+```
+
+Stop and clean up:
+
+```bash
+docker compose down
+```
+
+
+## API
+
+- GET `/`:
+  - Health/status endpoint. Returns 200 with a short message.
+
+- GET `/api/container/stats?id=<container_id>&cpuLimit=<limit>`:
+  - Returns CPU usage percent for a container if it is running on this node.
+  - `cpuLimit` is used to normalize CPU percentage according to service limits (e.g., 0.5).
+  - Example:
+    ```bash
+    curl "http://localhost:8080/api/container/stats?id=<container_id>&cpuLimit=0.5"
+    ```
+
+
+## Logging
+
+Logging is configured via `src/logging_config.py`.
+
+- Set the level with `LOG_LEVEL` env var (e.g., `INFO`, `DEBUG`, `WARNING`). Defaults to `DEBUG`.
+- Noise from `urllib3`, `werkzeug`, and `docker` is reduced to `INFO` by default.
+
+
+## Running without Docker Compose
+
+Build and run the container directly:
+
+```bash
+docker build -t swarm-autoscaler:dev .
+docker run -d \
+  -p 8080:80 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e AUTOSCALER_DRYRUN=1 \
+  --name swarm-autoscaler-dev \
+  swarm-autoscaler:dev
+```
+
+
+## Deploy to Docker Swarm
+
+Use the provided `swarm-deploy.yml` stack file. It runs the autoscaler in `global` mode on all nodes and mounts the Docker socket.
+
+```bash
+docker stack deploy -c swarm-deploy.yml autoscaler
+```
+
+Make sure target services you want to autoscale have labels set (see table above), for example:
+
+```yaml
+deploy:
+  labels:
+    - "swarm.autoscale=true"
+  resources:
+    limits:
+      cpus: '0.50'
+```
+
+
+## Project layout
+
+- `src/main.py`: App bootstrap and Flask app factory. Starts the autoscaler thread.
+- `src/settings.py`: Centralized configuration from environment variables.
+- `src/logging_config.py`: Logging setup with optional `LOG_LEVEL`.
+- `src/docker_service.py`: Docker client operations and scaling logic.
+- `src/autoscaler_service.py`: Autoscaling loop/thread.
+- `src/discovery.py`: Cluster discovery and in-cluster requests.
+- `src/container_controller.py`: Flask API endpoints.
+- `docker-compose.yml`: Local development environment.
+- `swarm-deploy.yml`: Swarm deployment manifest (global service).
+- `Dockerfile`: Production-ready image using Gunicorn and `uv` for deps.
