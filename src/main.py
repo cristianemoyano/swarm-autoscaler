@@ -5,21 +5,13 @@ from discovery import Discovery
 from cache import Cache
 import os
 import logging
-import multiprocessing
+from settings import MIN_PERCENTAGE, MAX_PERCENTAGE, DISCOVERY_DNSNAME, CHECK_INTERVAL, DRY_RUN
+from logging_config import configure_logging
 
-# Configuration
-MIN_PERCENTAGE = float(os.getenv("AUTOSCALER_MIN_PERCENTAGE")) if os.getenv("AUTOSCALER_MIN_PERCENTAGE") else 25.0
-MAX_PERCENTAGE = float(os.getenv("AUTOSCALER_MAX_PERCENTAGE")) if os.getenv("AUTOSCALER_MAX_PERCENTAGE") else 85.0
-DISCOVERY_DNSNAME = os.getenv("AUTOSCALER_DNSNAME") if os.getenv("AUTOSCALER_DNSNAME") else 'tasks.autoscaler'
-CHECK_INTERVAL = int(os.getenv("AUTOSCALER_INTERVAL")) if os.getenv("AUTOSCALER_INTERVAL") else 60*5 # Default 5 minutes
-DRY_RUN = bool(os.getenv("AUTOSCALER_DRYRUN"))
+# Configuration is now loaded from settings.py
 
 # Configure Logging
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', level=logging.DEBUG)
-
-logging.getLogger("urllib3").setLevel(logging.INFO)
-logging.getLogger("werkzeug").setLevel(logging.INFO)
-logging.getLogger("docker").setLevel(logging.INFO)
+configure_logging()
 
 # Initialize
 App = Flask(__name__)
