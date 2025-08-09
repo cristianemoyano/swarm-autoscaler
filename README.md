@@ -185,3 +185,25 @@ deploy:
 - `docker-compose.yml`: Local development environment.
 - `swarm-deploy.yml`: Swarm deployment manifest (global service).
 - `Dockerfile`: Production-ready image using Gunicorn and `uv` for deps.
+
+## Publish image to Docker Hub
+
+Use the helper script to build and push your image under your Docker Hub user:
+
+```bash
+# Option A: With interactive login (you must be logged in already via `docker login`)
+./scripts/publish.sh <your_dockerhub_user> [tag]
+
+# Option B: Non-interactive login
+DOCKERHUB_USER=<user> DOCKERHUB_TOKEN=<access_token> TAG=<tag> ./scripts/publish.sh
+
+# Examples
+./scripts/publish.sh myuser v0.1.0
+./scripts/publish.sh myuser        # defaults to :latest
+```
+
+By default the image name is `swarm-autoscaler`. Change it with `IMAGE_NAME` if you prefer a different repo name:
+
+```bash
+IMAGE_NAME=my-swarm-autoscaler ./scripts/publish.sh myuser v0.1.0
+```
