@@ -34,6 +34,12 @@
       <span id="status" style="margin-left:auto;color:#666;"></span>
     </div>
     <canvas id="chart"></canvas>
+    <div class="pager">
+      <button id="prev" disabled>Previous</button>
+      <span id="pageInfo"></span>
+      <button id="next" disabled>Next</button>
+    </div>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -42,10 +48,6 @@
       </thead>
       <tbody id="rows"></tbody>
     </table>
-    <div class="pager">
-      <button id="prev" disabled>Previous</button>
-      <span id="pageInfo"></span>
-      <button id="next" disabled>Next</button>
     </div>
 
     <script src="/static/events.js"></script>
