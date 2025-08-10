@@ -167,7 +167,7 @@ class DockerService(object):
             minReplicas, maxReplicas, service.name, newReplicasCount)
             return
 
-        self.logger.info("Scale service %s to %s - dryrun: %s", service.name, newReplicasCount, self.dryRun)
+        self.logger.info("Scale %s service %s to %s - dryrun: %s", "up" if scaleIn else "down", service.name, newReplicasCount, self.dryRun)
 
         if(self.dryRun):
             try:

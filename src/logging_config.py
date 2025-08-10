@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-DEFAULT_LEVEL = logging.DEBUG
+DEFAULT_LEVEL = logging.INFO
 # logfmt style with ISO-8601 timestamp
 DEFAULT_FORMAT = 'ts=%(asctime)s level=%(levelname)s logger=%(name)s msg="%(message)s"'
 DEFAULT_DATEFMT = '%Y-%m-%dT%H:%M:%S%z'
@@ -20,6 +20,12 @@ def configure_logging() -> None:
         console_handler.setLevel(level)
         console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT))
         root_logger.addHandler(console_handler)
+
+    # Make asyncio-friendly: turn on line buffering to minimize I/O stalls
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
 
     # Reduce noise from common libraries
     logging.getLogger("urllib3").setLevel(logging.INFO)

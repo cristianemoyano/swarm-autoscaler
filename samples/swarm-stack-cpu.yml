@@ -7,9 +7,9 @@ services:
     image: clifford666/swarm-autoscaler:latest
     environment:
       - AUTOSCALER_DNSNAME=tasks.autoscaler
-      - AUTOSCALER_INTERVAL=5
+      - AUTOSCALER_INTERVAL=1
       - AUTOSCALER_DRYRUN=0
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=DEBUG
       - EVENTS_DB_PATH=/data/events.db
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -31,7 +31,7 @@ services:
     deploy:
       replicas: 2
       labels:
-        - "swarm.autoscale=false"
+        - "swarm.autoscale=true"
         - "swarm.autoscale.metric=cpu"
         - "swarm.autoscale.percentage-max=50"
         - "swarm.autoscale.percentage-min=15"
@@ -97,6 +97,9 @@ services:
         - "swarm.autoscale.percentage-min=15"
         - "swarm.autoscale.min=2"
         - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
   
 volumes:
   autoscaler-events:

@@ -16,6 +16,7 @@ from constants import (
     DEFAULT_MAX_REPLICAS,
 )
 from queue import Queue, Empty
+from settings import AUTOSCALER_SCAN_WORKERS, SCALE_QUEUE_SIZE
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -25,15 +26,18 @@ class AutoscalerService(threading.Thread):
         self.checkInterval = checkInterval
         self.minPercentage = minPercentage
         self.maxPercentage = maxPercentage
-        self.autoscaleServicePool = ThreadPool(8)
+        # Tunable pool size for scanning services
+        self.autoscaleServicePool = ThreadPool(max(1, AUTOSCALER_SCAN_WORKERS))
         self.logger = logging.getLogger("AutoscalerService")
         # Scale requests queue and worker to serialize scale operations
-        self._scaleQueue: Queue = Queue(maxsize=1000)
+        self._scaleQueue: Queue = Queue(maxsize=max(100, SCALE_QUEUE_SIZE))
         self._pendingActions = {}
         self._pendingLock = threading.Lock()
         self._scaleWorker = _ScaleWorker(self.swarmService, self._scaleQueue, self._pendingActions, self._pendingLock)
         self._scaleWorker.daemon = True
         self._scaleWorker.start()
+        # Track in-flight metrics collection dispatch so we don't overlap scans
+        self._inflight = None
         # Track last observed autoscalable services count to avoid noisy logs
         self._lastServiceCount = None
  
@@ -57,8 +61,13 @@ class AutoscalerService(threading.Thread):
                     else:
                         self.logger.info("Services for autoscaling increased: %s -> %s", self._lastServiceCount, cur_count)
                     self._lastServiceCount = cur_count
-                # Don't block on slower services; process as results come in
-                list(self.autoscaleServicePool.imap_unordered(self.__autoscale, services))
+                # Dispatch metrics collection without blocking this loop.
+                # A background queue handles scaling, so metric collection and scaling are decoupled.
+                if self._inflight is not None and not self._inflight.ready():
+                    # Keep logs minimal to reduce I/O overhead
+                    pass
+                else:
+                    self._inflight = self.autoscaleServicePool.map_async(self.__autoscale, services)
             except Exception as e:
                 self.logger.error("Error in autoscale thread", exc_info=True)
             time.sleep(self.checkInterval)
@@ -131,7 +140,8 @@ class AutoscalerService(threading.Thread):
                 else:
                     self._enqueue_scale(service, False, reason, metric_name)
             else:
-                self.logger.debug("Service %s not needed to scale", service.name)
+                # Minimal logging for no-op cases
+                pass
         except Exception as e:
             self.logger.error("Error while try scale service", exc_info=True)
 

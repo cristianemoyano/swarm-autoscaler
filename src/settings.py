@@ -12,6 +12,11 @@ MAX_PERCENTAGE = float(os.getenv("AUTOSCALER_MAX_PERCENTAGE", DEFAULT_MAX_PERCEN
 DISCOVERY_DNSNAME = os.getenv("AUTOSCALER_DNSNAME", DEFAULT_DISCOVERY_DNSNAME)
 CHECK_INTERVAL = int(os.getenv("AUTOSCALER_INTERVAL", DEFAULT_CHECK_INTERVAL))
 
+# Concurrency tuning
+AUTOSCALER_SCAN_WORKERS = int(os.getenv("AUTOSCALER_SCAN_WORKERS", "4"))
+DISCOVERY_WORKERS = int(os.getenv("DISCOVERY_WORKERS", "4"))
+SCALE_QUEUE_SIZE = int(os.getenv("AUTOSCALER_SCALE_QUEUE_SIZE", "1000"))
+
 def _env_bool(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
     if val is None:

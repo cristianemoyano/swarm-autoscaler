@@ -5,11 +5,13 @@ from requests import get
 import json
 from cache import Cache
 from multiprocessing.dummy import Pool as ThreadPool
+from settings import DISCOVERY_WORKERS
 
 class Discovery(object):
     DiscoveryCacheKey = "discovery_hosts"
     def __init__(self, discoveryDnsName, memoryCache: Cache, checkInterval: int):
-        self.threadPool = ThreadPool(8)
+        # Tunable concurrency for node discovery requests
+        self.threadPool = ThreadPool(max(1, DISCOVERY_WORKERS))
         self.cache = memoryCache
         self.cacheTime = checkInterval / 2
         self.discoveryName = discoveryDnsName

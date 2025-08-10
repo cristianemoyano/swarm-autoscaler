@@ -1,8 +1,11 @@
 import os
 import sqlite3
 import logging
+import threading
+import queue
+import atexit
 from time import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class EventsStore:
@@ -19,6 +22,17 @@ class EventsStore:
         # Services cache (per-process) – invalidated on writes
         self._services_cache: Optional[list[str]] = None
         self._init_db()
+        # Async writer setup
+        self._queue: "queue.Queue[Tuple[float,str,str,int,int,int,str,Optional[str],int]]" = queue.Queue(maxsize=10000)
+        try:
+            self._flush_interval = float(os.getenv("EVENTS_FLUSH_INTERVAL", "0.5"))
+        except ValueError:
+            self._flush_interval = 0.5
+        self._batch_size = 64
+        self._stop_event = threading.Event()
+        self._writer = threading.Thread(target=self._writer_loop, name="EventsWriter", daemon=True)
+        self._writer.start()
+        atexit.register(self._shutdown)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(
@@ -68,31 +82,39 @@ class EventsStore:
         metric: Optional[str] = None,
         dry_run: bool = False,
     ) -> None:
+        """Queue an event for async persistence to reduce I/O on critical paths."""
         ts = time()
         delta = int(new_replicas) - int(old_replicas)
         direction = "up" if delta > 0 else ("down" if delta < 0 else "same")
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO events (ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    ts,
-                    service_id,
-                    service_name,
-                    int(old_replicas),
-                    int(new_replicas),
-                    delta,
-                    direction,
-                    reason,
-                    metric,
-                    1 if dry_run else 0,
-                ),
-            )
-            self._enforce_retention(conn)
-        # Invalidate services cache
-        self._services_cache = None
+        payload = (
+            ts,
+            service_id,
+            service_name,
+            int(old_replicas),
+            int(new_replicas),
+            delta,
+            direction,
+            reason,
+            metric,
+            1 if dry_run else 0,
+        )
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            # Fallback to sync write if queue is saturated; avoid losing critical audit data
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO events (ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        payload,
+                    )
+                    self._enforce_retention(conn)
+                self._services_cache = None
+            except Exception:
+                self.logger.warning("Failed to persist event synchronously when queue full", exc_info=True)
 
     def list_events(
         self,
@@ -193,6 +215,72 @@ class EventsStore:
         services = [r[0] for r in rows]
         self._services_cache = services
         return services
+
+    # Internal async writer
+    def _writer_loop(self) -> None:
+        while not self._stop_event.is_set():
+            batch: list[Tuple[float,str,str,int,int,int,str,Optional[str],int]] = []
+            try:
+                item = self._queue.get(timeout=self._flush_interval)
+                batch.append(item)
+            except queue.Empty:
+                pass
+            # Drain up to batch size without blocking
+            while len(batch) < self._batch_size:
+                try:
+                    batch.append(self._queue.get_nowait())
+                except queue.Empty:
+                    break
+            if not batch:
+                continue
+            try:
+                with self._connect() as conn:
+                    conn.executemany(
+                        """
+                        INSERT INTO events (ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        batch,
+                    )
+                    self._enforce_retention(conn)
+                # Invalidate cache after write
+                self._services_cache = None
+            except Exception:
+                self.logger.warning("Failed to persist events batch", exc_info=True)
+            finally:
+                for _ in batch:
+                    try:
+                        self._queue.task_done()
+                    except Exception:
+                        pass
+
+    def _shutdown(self) -> None:
+        # Flush remaining events
+        self._stop_event.set()
+        try:
+            self._writer.join(timeout=1.5)
+        except Exception:
+            pass
+        # Best-effort final drain
+        remaining: list[Tuple[float,str,str,int,int,int,str,Optional[str],int]] = []
+        while True:
+            try:
+                remaining.append(self._queue.get_nowait())
+            except queue.Empty:
+                break
+        if remaining:
+            try:
+                with self._connect() as conn:
+                    conn.executemany(
+                        """
+                        INSERT INTO events (ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        remaining,
+                    )
+                    self._enforce_retention(conn)
+            except Exception:
+                self.logger.warning("Failed to flush remaining events on shutdown", exc_info=True)
 
 
 Events = EventsStore()
