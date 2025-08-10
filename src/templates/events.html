@@ -29,7 +29,7 @@
     <table>
       <thead>
         <tr>
-          <th>Time</th><th>Service</th><th>Metric</th><th>Old</th><th>New</th><th>Δ</th><th>Dir</th><th>Reason</th>
+          <th>Time</th><th>Service</th><th>Metric</th><th>Old</th><th>New</th><th>Δ</th><th>Dir</th><th>Reason</th><th>Dry</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -60,6 +60,7 @@
           <td class="${cls}">${e.delta}</td>
           <td class="${cls}">${e.direction}</td>
           <td>${e.reason || ''}</td>
+          <td>${e.dryRun ? 'yes' : ''}</td>
         </tr>`;
       }).join('');
     }
