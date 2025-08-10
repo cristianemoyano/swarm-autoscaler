@@ -8,6 +8,7 @@ from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
 from constants import MetricEnum, metric_to_str
+from queue import Queue, Empty
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -19,6 +20,13 @@ class AutoscalerService(threading.Thread):
         self.maxPercentage = maxPercentage
         self.autoscaleServicePool = ThreadPool(8)
         self.logger = logging.getLogger("AutoscalerService")
+        # Scale requests queue and worker to serialize scale operations
+        self._scaleQueue: Queue = Queue(maxsize=1000)
+        self._pendingActions = {}
+        self._pendingLock = threading.Lock()
+        self._scaleWorker = _ScaleWorker(self.swarmService, self._scaleQueue, self._pendingActions, self._pendingLock)
+        self._scaleWorker.daemon = True
+        self._scaleWorker.start()
  
     def run(self):
         """
@@ -33,7 +41,8 @@ class AutoscalerService(threading.Thread):
                 services = self.swarmService.getAutoscaleServices()
                 services = services if services != None else []
                 self.logger.debug("Services len: %s", len(services))
-                self.autoscaleServicePool.map(self.__autoscale, services)    
+                # Don't block on slower services; process as results come in
+                list(self.autoscaleServicePool.imap_unordered(self.__autoscale, services))
             except Exception as e:
                 self.logger.error("Error in autoscale thread", exc_info=True)
             time.sleep(self.checkInterval)
@@ -54,9 +63,9 @@ class AutoscalerService(threading.Thread):
             if(containerStats != None and metric_key in containerStats):
                 stats.append(containerStats[metric_key])
         if(len(stats) > 0):
-            self.__scale(service, stats)
+            self.__scale(service, stats, metric_key)
 
-    def __scale(self, service, stats):
+    def __scale(self, service, stats, metric_name: str):
         """
             Calculate median and max metric percentage of service replicas and inc or dec replicas count
         """
@@ -67,15 +76,58 @@ class AutoscalerService(threading.Thread):
         serviceMinPercentage = self.swarmService.getServiceMinPercentage(service, self.minPercentage)
         serviceDecreaseMode = self.swarmService.getServiceDecreaseMode(service)
 
-        self.logger.debug("Mean metric for service=%s : %s", service.name, meanValue)
-        self.logger.debug("Max metric for service=%s : %s", service.name, maxValue)
+        self.logger.debug("Metric=%s | Service=%s | Mean=%s | Max=%s", metric_name, service.name, meanValue, maxValue)
             
         try:
             if(meanValue > serviceMaxPercentage):
-                self.swarmService.scaleService(service, True)
+                self._enqueue_scale(service, True)
             elif( (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue) < serviceMinPercentage):
-                self.swarmService.scaleService(service, False)
+                self._enqueue_scale(service, False)
             else:
                 self.logger.debug("Service %s not needed to scale", service.name)
         except Exception as e:
             self.logger.error("Error while try scale service", exc_info=True)
+
+    def _enqueue_scale(self, service, scaleIn: bool) -> None:
+        service_id = service.id
+        with self._pendingLock:
+            last = self._pendingActions.get(service_id)
+            if last is not None and last == scaleIn:
+                # Duplicate action already pending; skip
+                return
+            self._pendingActions[service_id] = scaleIn
+        try:
+            self._scaleQueue.put_nowait((service_id, scaleIn))
+            self.logger.debug("Enqueued scale action for %s: %s", service.name, 'up' if scaleIn else 'down')
+        except Exception:
+            # Queue full or unexpected error; drop gracefully
+            self.logger.warning("Scale queue is full. Dropping scale action for %s", service.name)
+
+
+class _ScaleWorker(threading.Thread):
+    def __init__(self, swarmService: DockerService, scaleQueue: Queue, pendingActions: dict, pendingLock: threading.Lock):
+        super().__init__()
+        self.swarmService = swarmService
+        self.scaleQueue = scaleQueue
+        self.pendingActions = pendingActions
+        self.pendingLock = pendingLock
+        self.logger = logging.getLogger("ScaleWorker")
+
+    def run(self):
+        while True:
+            try:
+                service_id, scaleIn = self.scaleQueue.get(timeout=1.0)
+            except Empty:
+                continue
+            try:
+                # Refresh service reference before scaling
+                service = self.swarmService.dockerClient.services.get(service_id)
+                self.swarmService.scaleService(service, scaleIn)
+            except Exception:
+                self.logger.error("Failed to scale service id=%s", service_id, exc_info=True)
+            finally:
+                with self.pendingLock:
+                    # Clear pending action regardless of result to allow future attempts
+                    if service_id in self.pendingActions:
+                        del self.pendingActions[service_id]
+                self.scaleQueue.task_done()

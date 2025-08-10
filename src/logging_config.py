@@ -3,7 +3,9 @@ import os
 import sys
 
 DEFAULT_LEVEL = logging.DEBUG
-DEFAULT_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+# logfmt style with ISO-8601 timestamp
+DEFAULT_FORMAT = 'ts=%(asctime)s level=%(levelname)s logger=%(name)s msg="%(message)s"'
+DEFAULT_DATEFMT = '%Y-%m-%dT%H:%M:%S%z'
 
 def configure_logging() -> None:
     level_name = os.getenv('LOG_LEVEL', '')
@@ -16,7 +18,7 @@ def configure_logging() -> None:
     if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
         console_handler = logging.StreamHandler(stream=sys.stdout)
         console_handler.setLevel(level)
-        console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT))
+        console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT))
         root_logger.addHandler(console_handler)
 
     # Reduce noise from common libraries

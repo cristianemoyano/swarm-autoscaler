@@ -12,12 +12,11 @@ services:
       mode: global
 
   sample:
-    image: nginx:alpine
-    ports:
-      - target: 80
-        published: 8082
-        protocol: tcp
-        mode: ingress
+    image: python:3.13-alpine
+    command: ["python", "-c", "import os,time; mb=int(os.getenv('MEM_HOG_MB','220')); dur=int(os.getenv('MEM_HOG_DURATION','300')); blobs=[bytearray(1024*1024) for _ in range(mb)]; time.sleep(dur)"]
+    environment:
+      - MEM_HOG_MB=220        # adjust to tune memory pressure
+      - MEM_HOG_DURATION=300  # seconds to hold memory
     deploy:
       replicas: 2
       labels:
@@ -30,4 +29,4 @@ services:
       resources:
         limits:
           cpus: '0.50'
-          memory: '128M'
+          memory: '256M'

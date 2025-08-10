@@ -27,16 +27,19 @@ class Discovery(object):
     def __sendToAll(self, url):
         hosts = self.__getClusterHosts()
         requests = list("http://%s%s" %(ip,url) for ip in hosts)
-        results = self.threadPool.map(self.__send, requests)
-        for result in results:
-            if(result != None):
+        # Return as soon as the first successful response arrives
+        for result in self.threadPool.imap_unordered(self.__send, requests):
+            if result is not None:
                 return result
         return None
 
     def __send(self, url):
-        result = get(url)
-        if(result != None and result.status_code == 200):
-            return json.loads(result.text)
+        try:
+            result = get(url, timeout=3.0)
+            if result is not None and result.status_code == 200:
+                return json.loads(result.text)
+        except Exception:
+            pass
         return None
 
     def __getClusterHosts(self):

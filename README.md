@@ -254,14 +254,8 @@ ab -n 100000 -c 200 http://localhost:8081/
 
 Memory sample (port 8082): nginx is light on memory by default. You can temporarily stress memory to trigger scaling:
 
-```bash
-# Replace the sample image with a stress tool for a few minutes
-# WARNING: adjust values to your machine; avoid OOM
-docker service update \
-  --image polinux/stress \
-  --args "--vm 1 --vm-bytes 100M --vm-keep --timeout 300s" \
-  autoscale-mem_sample
-```
+
+docker service rm autoscale-memory_sample
 
 ## Publish image to Docker Hub
 
