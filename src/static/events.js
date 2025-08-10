@@ -220,6 +220,9 @@ nextBtn.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage+
 // Live updates: only fetch the first page and append/prepend differences without full redraw flicker
 liveEl.addEventListener('change', ()=>{
   if(liveEl.checked){
+    // Clear date filters when enabling live
+    if(sinceEl) sinceEl.value = '';
+    if(untilEl) untilEl.value = '';
     // Force newest-first, page 1
     currentPage = 1;
     sortEl.value = 'newest';
@@ -268,9 +271,8 @@ function updateLiveAvailability(){
   const dateActive = Boolean((sinceEl && sinceEl.value) || (untilEl && untilEl.value));
   if(dateActive){
     stopLive();
-    liveEl.disabled = true;
   } else {
-    liveEl.disabled = false;
+    // no-op; keep live toggle enabled
   }
 }
 
