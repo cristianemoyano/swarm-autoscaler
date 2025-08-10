@@ -1,17 +1,34 @@
 #!/bin/python
 import docker
 import logging
+import time
+from docker.errors import APIError
 from cache import Cache
+from constants import (
+    LABEL_AUTOSCALE,
+    LABEL_MAX_REPLICAS,
+    LABEL_MIN_REPLICAS,
+    LABEL_DISABLE_MANUAL_REPLICAS,
+    LABEL_PERCENTAGE_MAX,
+    LABEL_PERCENTAGE_MIN,
+    LABEL_DECREASE_MODE,
+    LABEL_METRIC,
+    DEFAULT_MIN_REPLICAS,
+    DEFAULT_MAX_REPLICAS,
+)
+from constants import MetricEnum
 from decrease_mode_enum import DecreaseModeEnum
+from events import Events
 
 class DockerService(object):
-    AutoscaleLabel = 'swarm.autoscale'
-    MaxReplicasLabel = 'swarm.autoscale.max'
-    MinReplicasLabel = 'swarm.autoscale.min'
-    DisableManualReplicasControlLabel = 'swarm.autoscale.disable-manual-replicas'
-    MaxPercentageLabel = 'swarm.autoscale.percentage-max'
-    MinPercentageLabel = 'swarm.autoscale.percentage-min'
-    DecreaseModeLabel = 'swarm.autoscale.decrease-mode'
+    AutoscaleLabel = LABEL_AUTOSCALE
+    MaxReplicasLabel = LABEL_MAX_REPLICAS
+    MinReplicasLabel = LABEL_MIN_REPLICAS
+    DisableManualReplicasControlLabel = LABEL_DISABLE_MANUAL_REPLICAS
+    MaxPercentageLabel = LABEL_PERCENTAGE_MAX
+    MinPercentageLabel = LABEL_PERCENTAGE_MIN
+    DecreaseModeLabel = LABEL_DECREASE_MODE
+    MetricLabel = LABEL_METRIC  # cpu | memory (default: cpu)
 
     def __init__(self, memoryCache: Cache, dryRun: bool):
         self.memoryCache = memoryCache
@@ -41,6 +58,24 @@ class DockerService(object):
             return None
         enabledAutoscaleServices = list((x for x in allServices if x.attrs['Spec']['Labels'][self.AutoscaleLabel] == 'true'))
         return enabledAutoscaleServices
+
+    def getServicesWithAutoscaleLabel(self):
+        """
+        Return all services that define the autoscale label (true or false).
+        This allows the autoscaler to evaluate metrics and emit warnings even
+        when autoscaling is explicitly disabled on a service.
+        """
+        try:
+            services = self.dockerClient.services.list(filters={'label': self.AutoscaleLabel})
+            return services or []
+        except Exception:
+            return []
+
+    def isAutoscaleEnabled(self, service) -> bool:
+        try:
+            return service.attrs.get('Spec', {}).get('Labels', {}).get(self.AutoscaleLabel) == 'true'
+        except Exception:
+            return False
 
     def getServiceContainersId(self, service):
         tasks = service.tasks({'desired-state':'running'})
@@ -72,6 +107,14 @@ class DockerService(object):
         except:
             return default
 
+    def getServiceMetric(self, service, default: MetricEnum = MetricEnum.CPU):
+        try:
+            value = service.attrs.get('Spec').get('Labels').get(self.MetricLabel)
+            from constants import parse_metric  # local import to avoid cycles
+            return parse_metric(value)
+        except:
+            return default
+
     def getContainerCpuStat(self, containerId, cpuLimit):
         containers = self.dockerClient.containers.list(filters={'id':containerId})
         if(len(containers) == 0):
@@ -79,7 +122,14 @@ class DockerService(object):
         containerStats = containers[0].stats(stream=False)
         return self.__calculateCpu(containerStats, cpuLimit)
 
-    def scaleService(self, service, scaleIn = True):
+    def getContainerMemoryStat(self, containerId):
+        containers = self.dockerClient.containers.list(filters={'id':containerId})
+        if(len(containers) == 0):
+            return None
+        containerStats = containers[0].stats(stream=False)
+        return self.__calculateMemory(containerStats)
+
+    def scaleService(self, service, scaleIn: bool = True, reason: str = "", metric: str | None = None):
         replicated = service.attrs['Spec']['Mode'].get('Replicated')
         if(replicated == None):
             self.logger.error("Cannot scale service %s because is not replicated mode", service.name)
@@ -89,10 +139,10 @@ class DockerService(object):
         nodeCount = self.__getNodesCountCached()
 
         maxReplicas = service.attrs['Spec']['Labels'].get(self.MaxReplicasLabel)
-        maxReplicas = 15 if maxReplicas == None else int(maxReplicas)
+        maxReplicas = DEFAULT_MAX_REPLICAS if maxReplicas == None else int(maxReplicas)
 
         minReplicas = service.attrs['Spec']['Labels'].get(self.MinReplicasLabel)
-        minReplicas = 2 if minReplicas == None else int(minReplicas)
+        minReplicas = DEFAULT_MIN_REPLICAS if minReplicas == None else int(minReplicas)
 
         disableManualReplicas = service.attrs['Spec']['Labels'].get(self.DisableManualReplicasControlLabel) == 'true'
 
@@ -117,27 +167,78 @@ class DockerService(object):
             minReplicas, maxReplicas, service.name, newReplicasCount)
             return
 
-        self.logger.info("Scale service %s to %s",service.name, newReplicasCount)
+        self.logger.info("Scale %s service %s to %s - dryrun: %s", "up" if scaleIn else "down", service.name, newReplicasCount, self.dryRun)
 
         if(self.dryRun):
+            try:
+                Events.add_scale_event(
+                    service_id=service.id,
+                    service_name=service.name,
+                    old_replicas=replicas,
+                    new_replicas=newReplicasCount,
+                    reason=reason,
+                    metric=metric,
+                    dry_run=self.dryRun,
+                )
+            except Exception:
+                pass
             return
-            
+
         service.scale(newReplicasCount)
+        try:
+            Events.add_scale_event(
+                service_id=service.id,
+                service_name=service.name,
+                old_replicas=replicas,
+                new_replicas=newReplicasCount,
+                reason=reason,
+                metric=metric,
+                dry_run=self.dryRun,
+            )
+        except Exception:
+            pass
         
     def __calculateCpu(self, stats, cpuLimit):
+        cpu_stats = stats.get('cpu_stats', {})
+        precpu_stats = stats.get('precpu_stats', {})
+
+        # Determine cpu count robustly
+        cpuCount = cpu_stats.get('online_cpus')
+        if not cpuCount:
+            per_cpu = ((cpu_stats.get('cpu_usage') or {}).get('percpu_usage')) or []
+            cpuCount = len(per_cpu) if isinstance(per_cpu, list) and len(per_cpu) > 0 else 1
+
+        cpu_usage_total = ((cpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
+        precpu_usage_total = ((precpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
+        system_cpu = cpu_stats.get('system_cpu_usage') or 0.0
+        pre_system_cpu = precpu_stats.get('system_cpu_usage') or 0.0
+
+        cpuDelta = float(cpu_usage_total) - float(precpu_usage_total)
+        systemDelta = float(system_cpu) - float(pre_system_cpu)
+
         percent = 0.0
-        cpuCount = stats['cpu_stats']['online_cpus']
-        cpuDelta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-        systemDelta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-        if( cpuDelta > 0.0 and systemDelta > 0.0 ):
-            percent = (cpuDelta / systemDelta) * cpuCount * 100.0
-        
-        # Correction of the percentage of workload given the limit or, in its absence, the number of CPUs to get a value in the range of 0 - 100
-        if(cpuLimit > 0):
-            percent = percent / cpuLimit
+        if cpuDelta > 0.0 and systemDelta > 0.0:
+            percent = (cpuDelta / systemDelta) * float(cpuCount) * 100.0
+
+        # Normalize by CPU limit or cpuCount
+        if cpuLimit and cpuLimit > 0:
+            percent = percent / float(cpuLimit)
         else:
-            percent = percent / cpuCount
+            percent = percent / float(cpuCount if cpuCount > 0 else 1)
         return percent
+
+
+    def __calculateMemory(self, stats):
+        try:
+            memoryStats = stats.get('memory_stats', {})
+            usage = float(memoryStats.get('usage', 0.0))
+            limit = float(memoryStats.get('limit', 0.0))
+            if limit <= 0.0:
+                return 0.0
+            percent = (usage / limit) * 100.0
+            return percent
+        except Exception:
+            return 0.0
 
     def __getNodesCountCached(self):
         cacheKey = "nodes_count"

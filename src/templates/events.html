@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Swarm Autoscaler - Scale Events</title>
+  <link rel="stylesheet" href="/static/events.css" />
+  </head>
+  <body>
+    <h1>Scale Events</h1>
+    <div class="controls">
+      <label>Service:
+        <select id="svc">
+          <option value="">(all)</option>
+        </select>
+      </label>
+      
+      <label>From: <input id="since" type="datetime-local" /></label>
+      <label>To: <input id="until" type="datetime-local" /></label>
+      <label>Range:
+        <select id="relative">
+          <option value="all" selected>All</option>
+          <option value="10m">Last 10 min</option>
+          <option value="1h">Last 1 hour</option>
+          <option value="4h">Last 4 hours</option>
+          <option value="24h">Last 24 hours</option>
+        </select>
+      </label>
+      <label>Live
+        <input id="live" type="checkbox" checked />
+      </label>
+      <button id="refresh">Refresh</button>
+      <button id="clear">Delete events</button>
+      <span id="status" style="margin-left:auto;color:#666;"></span>
+    </div>
+    <canvas id="chart"></canvas>
+    <div id="legend" class="legend" aria-label="Services legend"></div>
+    <div class="pager">
+      <button id="prev" disabled>Previous</button>
+      <span id="pageInfo"></span>
+      <button id="next" disabled>Next</button>
+      <span style="margin: 0 8px; color: #999;">|</span>
+      <label>Dark
+        <input id="theme" type="checkbox" />
+      </label>
+      <span style="margin: 0 8px; color: #999;">|</span>
+     
+      <span style="margin: 0 8px; color: #999;">|</span>
+      <label>Sort:
+        <select id="sort">
+          <option value="newest" selected>Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </label>
+      <label>Page size:
+        <select id="limit">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+        </select>
+      </label>
+    </div>
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th><th>Service</th><th>Metric</th><th>Old</th><th>New</th><th>Δ</th><th>Dir</th><th>Reason</th><th>Dry</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    </div>
+
+    <script src="/static/events.js"></script>
+  </body>
+  </html>
+
+

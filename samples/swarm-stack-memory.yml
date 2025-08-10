@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  autoscaler:
+    image: clifford666/swarm-autoscaler:latest
+    environment:
+      - AUTOSCALER_DNSNAME=tasks.autoscaler
+      - AUTOSCALER_INTERVAL=30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      mode: global
+
+  sample:
+    image: python:3.13-alpine
+    command: ["python", "-c", "import os,time; mb=int(os.getenv('MEM_HOG_MB','220')); dur=int(os.getenv('MEM_HOG_DURATION','300')); blobs=[bytearray(1024*1024) for _ in range(mb)]; time.sleep(dur)"]
+    environment:
+      - MEM_HOG_MB=220        # adjust to tune memory pressure
+      - MEM_HOG_DURATION=300  # seconds to hold memory
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=memory"
+        - "swarm.autoscale.percentage-max=80"
+        - "swarm.autoscale.percentage-min=30"
+        - "swarm.autoscale.min=1"
+        - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: '256M'

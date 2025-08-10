@@ -5,11 +5,13 @@ from requests import get
 import json
 from cache import Cache
 from multiprocessing.dummy import Pool as ThreadPool
+from settings import DISCOVERY_WORKERS
 
 class Discovery(object):
     DiscoveryCacheKey = "discovery_hosts"
     def __init__(self, discoveryDnsName, memoryCache: Cache, checkInterval: int):
-        self.threadPool = ThreadPool(8)
+        # Tunable concurrency for node discovery requests
+        self.threadPool = ThreadPool(max(1, DISCOVERY_WORKERS))
         self.cache = memoryCache
         self.cacheTime = checkInterval / 2
         self.discoveryName = discoveryDnsName
@@ -17,23 +19,29 @@ class Discovery(object):
         if(os.name == 'nt'):
             self.addrInfoExpectedType = 0
 
-    def getContainerStats(self, containerId, cpuLimit):
-        return self.__sendToAll("/api/container/stats?id=%s&cpuLimit=%s" %
-                         (containerId, cpuLimit))
+    def getContainerStats(self, containerId, cpuLimit, metric: str = 'cpu'):
+        query = "/api/container/stats?id=%s" % containerId
+        if metric == 'cpu':
+            query += "&cpuLimit=%s" % cpuLimit
+        query += "&metric=%s" % metric
+        return self.__sendToAll(query)
 
     def __sendToAll(self, url):
         hosts = self.__getClusterHosts()
         requests = list("http://%s%s" %(ip,url) for ip in hosts)
-        results = self.threadPool.map(self.__send, requests)
-        for result in results:
-            if(result != None):
+        # Return as soon as the first successful response arrives
+        for result in self.threadPool.imap_unordered(self.__send, requests):
+            if result is not None:
                 return result
         return None
 
     def __send(self, url):
-        result = get(url)
-        if(result != None and result.status_code == 200):
-            return json.loads(result.text)
+        try:
+            result = get(url, timeout=3.0)
+            if result is not None and result.status_code == 200:
+                return json.loads(result.text)
+        except Exception:
+            pass
         return None
 
     def __getClusterHosts(self):

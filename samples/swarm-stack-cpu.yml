@@ -1,0 +1,105 @@
+version: "3.8"
+
+services:
+  autoscaler:
+    ports:
+      - "8080:80"
+    image: clifford666/swarm-autoscaler:latest
+    environment:
+      - AUTOSCALER_DNSNAME=tasks.autoscaler
+      - AUTOSCALER_INTERVAL=1
+      - AUTOSCALER_DRYRUN=0
+      - LOG_LEVEL=INFO
+      - EVENTS_DB_PATH=/data/events.db
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - autoscaler-events:/data
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 100M
+
+  sample_1:
+    image: nginx:alpine
+    ports:
+      - target: 80
+        published: 8081
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=cpu"
+        - "swarm.autoscale.percentage-max=50"
+        - "swarm.autoscale.percentage-min=15"
+        - "swarm.autoscale.min=2"
+        - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
+
+  sample_2:
+    image: nginx:alpine
+    ports:
+      - target: 80
+        published: 8082
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=cpu"
+        - "swarm.autoscale.percentage-max=50"
+        - "swarm.autoscale.percentage-min=15"
+        - "swarm.autoscale.min=2"
+        - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
+
+  sample_3:
+    image: nginx:alpine
+    ports:
+      - target: 80
+        published: 8083
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=cpu"
+        - "swarm.autoscale.percentage-max=50"
+        - "swarm.autoscale.percentage-min=15"
+        - "swarm.autoscale.min=2"
+        - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
+
+  sample_4:
+    image: nginx:alpine
+    ports:
+      - target: 80
+        published: 8084
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=cpu"
+        - "swarm.autoscale.percentage-max=50"
+        - "swarm.autoscale.percentage-min=15"
+        - "swarm.autoscale.min=2"
+        - "swarm.autoscale.max=5"
+      resources:
+        limits:
+          cpus: '0.50'
+  
+volumes:
+  autoscaler-events:

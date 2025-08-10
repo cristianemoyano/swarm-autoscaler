@@ -7,6 +7,16 @@ from discovery import Discovery
 from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
+from constants import (
+    MetricEnum,
+    metric_to_str,
+    LABEL_MIN_REPLICAS,
+    LABEL_MAX_REPLICAS,
+    DEFAULT_MIN_REPLICAS,
+    DEFAULT_MAX_REPLICAS,
+)
+from queue import Queue, Empty
+from settings import AUTOSCALER_SCAN_WORKERS, SCALE_QUEUE_SIZE
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -16,8 +26,20 @@ class AutoscalerService(threading.Thread):
         self.checkInterval = checkInterval
         self.minPercentage = minPercentage
         self.maxPercentage = maxPercentage
-        self.autoscaleServicePool = ThreadPool(8)
+        # Tunable pool size for scanning services
+        self.autoscaleServicePool = ThreadPool(max(1, AUTOSCALER_SCAN_WORKERS))
         self.logger = logging.getLogger("AutoscalerService")
+        # Scale requests queue and worker to serialize scale operations
+        self._scaleQueue: Queue = Queue(maxsize=max(100, SCALE_QUEUE_SIZE))
+        self._pendingActions = {}
+        self._pendingLock = threading.Lock()
+        self._scaleWorker = _ScaleWorker(self.swarmService, self._scaleQueue, self._pendingActions, self._pendingLock)
+        self._scaleWorker.daemon = True
+        self._scaleWorker.start()
+        # Track in-flight metrics collection dispatch so we don't overlap scans
+        self._inflight = None
+        # Track last observed autoscalable services count to avoid noisy logs
+        self._lastServiceCount = None
  
     def run(self):
         """
@@ -29,16 +51,30 @@ class AutoscalerService(threading.Thread):
                     self.logger.warning("Instance running not on manager or not on leader")
                     time.sleep(60*10) # Wait 10 minute
                     continue
-                services = self.swarmService.getAutoscaleServices()
-                services = services if services != None else []
-                self.logger.debug("Services len: %s", len(services))
-                self.autoscaleServicePool.map(self.__autoscale, services)    
+                # Evaluate all services that define autoscale label (true/false)
+                services = self.swarmService.getServicesWithAutoscaleLabel()
+                services = services if services is not None else []
+                cur_count = len(services)
+                if self._lastServiceCount is None or cur_count > self._lastServiceCount:
+                    if self._lastServiceCount is None:
+                        self.logger.info("Services for autoscaling: %s", cur_count)
+                    else:
+                        self.logger.info("Services for autoscaling increased: %s -> %s", self._lastServiceCount, cur_count)
+                    self._lastServiceCount = cur_count
+                # Dispatch metrics collection without blocking this loop.
+                # A background queue handles scaling, so metric collection and scaling are decoupled.
+                if self._inflight is not None and not self._inflight.ready():
+                    # Keep logs minimal to reduce I/O overhead
+                    pass
+                else:
+                    self._inflight = self.autoscaleServicePool.map_async(self.__autoscale, services)
             except Exception as e:
                 self.logger.error("Error in autoscale thread", exc_info=True)
             time.sleep(self.checkInterval)
 
     def __autoscale(self, service):
-        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service)
+        serviceMetric = self.swarmService.getServiceMetric(service, MetricEnum.CPU)
+        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service) if serviceMetric == MetricEnum.CPU else -1
         containers = self.swarmService.getServiceContainersId(service)
 
         if(containers == None or len(containers) == 0):
@@ -46,33 +82,109 @@ class AutoscalerService(threading.Thread):
             return
 
         stats = []
+        metric_key = metric_to_str(serviceMetric)
         for id in containers:
-            containerStats = self.discovery.getContainerStats(id, cpuLimit)
-            if(containerStats != None):
-                stats.append(containerStats['cpu'])
+            containerStats = self.discovery.getContainerStats(id, cpuLimit, metric_key)
+            if(containerStats != None and metric_key in containerStats):
+                stats.append(containerStats[metric_key])
         if(len(stats) > 0):
-            self.__scale(service, stats)
+            self.__scale(service, stats, metric_key)
 
-    def __scale(self, service, stats):
+    def __scale(self, service, stats, metric_name: str):
         """
-            Method where calculate median and max cpu percentage of service replicas and inc or dec replicas count
+            Calculate median and max metric percentage of service replicas and inc or dec replicas count
         """
-        meanCpu = statistics.median(stats)
-        maxCpu = max(stats)
+        meanValue = statistics.median(stats)
+        maxValue = max(stats)
 
         serviceMaxPercentage = self.swarmService.getServiceMaxPercentage(service, self.maxPercentage)
         serviceMinPercentage = self.swarmService.getServiceMinPercentage(service, self.minPercentage)
         serviceDecreaseMode = self.swarmService.getServiceDecreaseMode(service)
 
-        self.logger.debug("Mean cpu for service=%s : %s",service.name,meanCpu)
-        self.logger.debug("Max cpu for service=%s : %s",service.name,maxCpu)
+        self.logger.debug("Metric=%s | Service=%s | Mean=%s | Max=%s", metric_name, service.name, meanValue, maxValue)
             
         try:
-            if(meanCpu > serviceMaxPercentage):
-                self.swarmService.scaleService(service, True)
-            elif( (meanCpu if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxCpu) < serviceMinPercentage):
-                self.swarmService.scaleService(service, False)
+            autoscale_enabled = self.swarmService.isAutoscaleEnabled(service)
+
+            # Current replicas and bounds
+            labels = (service.attrs.get('Spec', {}) or {}).get('Labels', {}) or {}
+            replicated = (service.attrs.get('Spec', {}) or {}).get('Mode', {}).get('Replicated') or {}
+            replicas = int(replicated.get('Replicas', 0))
+            minReplicas = int(labels.get(LABEL_MIN_REPLICAS, DEFAULT_MIN_REPLICAS))
+            maxReplicas = int(labels.get(LABEL_MAX_REPLICAS, DEFAULT_MAX_REPLICAS))
+
+            scale_up_needed = meanValue > serviceMaxPercentage
+            scale_down_threshold = (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue)
+            scale_down_needed = scale_down_threshold < serviceMinPercentage
+
+            # Respect replica bounds early to avoid enqueue noise
+            if scale_up_needed and replicas >= maxReplicas:
+                self.logger.debug("Service %s at max replicas (%s); skipping scale up", service.name, maxReplicas)
+                scale_up_needed = False
+            if scale_down_needed and replicas <= minReplicas:
+                self.logger.debug("Service %s at min replicas (%s); skipping scale down", service.name, minReplicas)
+                scale_down_needed = False
+
+            if scale_up_needed:
+                reason = f"{metric_name} median {meanValue:.1f}% > max {serviceMaxPercentage}%"
+                if not autoscale_enabled:
+                    self.logger.warning("Service %s would scale up to %s but autoscale=false. %s", service.name, replicas+1, reason)
+                else:
+                    self._enqueue_scale(service, True, reason, metric_name)
+            elif scale_down_needed:
+                comp = scale_down_threshold
+                basis = "median" if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else "max"
+                reason = f"{metric_name} {basis} {comp:.1f}% < min {serviceMinPercentage}%"
+                if not autoscale_enabled:
+                    self.logger.warning("Service %s would scale down to %s but autoscale=false. %s", service.name, max(replicas-1, minReplicas), reason)
+                else:
+                    self._enqueue_scale(service, False, reason, metric_name)
             else:
-                self.logger.debug("Service %s not needed to scale", service.name)
+                # Minimal logging for no-op cases
+                pass
         except Exception as e:
             self.logger.error("Error while try scale service", exc_info=True)
+
+    def _enqueue_scale(self, service, scaleIn: bool, reason: str, metric_name: str) -> None:
+        service_id = service.id
+        with self._pendingLock:
+            last = self._pendingActions.get(service_id)
+            if last is not None and last == scaleIn:
+                # Duplicate action already pending; skip
+                return
+            self._pendingActions[service_id] = scaleIn
+        try:
+            self._scaleQueue.put_nowait((service_id, scaleIn, reason, metric_name))
+            self.logger.debug("Enqueued scale action for %s: %s", service.name, 'up' if scaleIn else 'down')
+        except Exception:
+            # Queue full or unexpected error; drop gracefully
+            self.logger.warning("Scale queue is full. Dropping scale action for %s", service.name)
+
+
+class _ScaleWorker(threading.Thread):
+    def __init__(self, swarmService: DockerService, scaleQueue: Queue, pendingActions: dict, pendingLock: threading.Lock):
+        super().__init__()
+        self.swarmService = swarmService
+        self.scaleQueue = scaleQueue
+        self.pendingActions = pendingActions
+        self.pendingLock = pendingLock
+        self.logger = logging.getLogger("ScaleWorker")
+
+    def run(self):
+        while True:
+            try:
+                service_id, scaleIn, reason, metric_name = self.scaleQueue.get(timeout=1.0)
+            except Empty:
+                continue
+            try:
+                # Refresh service reference before scaling
+                service = self.swarmService.dockerClient.services.get(service_id)
+                self.swarmService.scaleService(service, scaleIn, reason=reason, metric=metric_name)
+            except Exception:
+                self.logger.error("Failed to scale service id=%s", service_id, exc_info=True)
+            finally:
+                with self.pendingLock:
+                    # Clear pending action regardless of result to allow future attempts
+                    if service_id in self.pendingActions:
+                        del self.pendingActions[service_id]
+                self.scaleQueue.task_done()
