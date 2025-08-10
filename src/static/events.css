@@ -98,6 +98,36 @@ th, td {
     background: var(--bg);
 }
 
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    max-height: 72px;
+    overflow-y: auto;
+    padding: 8px 8px 0;
+    margin: 0 0 12px;
+    border: 1px solid var(--border);
+    border-top: none;
+    background: var(--bg);
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: var(--card);
+    font-size: 14px;
+}
+
+.legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
 .pager {
     display: flex;
     gap: 10px;

@@ -9,6 +9,7 @@ let totalPages = 1;
 const statusEl = document.getElementById('status');
 const chartEl = document.getElementById('chart');
 const sortEl = document.getElementById('sort');
+const legendEl = document.getElementById('legend');
 const sinceEl = document.getElementById('since');
 const untilEl = document.getElementById('until');
 const refreshBtn = document.getElementById('refresh');
@@ -118,17 +119,13 @@ function renderChart(events){
     seriesPts.push({svc, color: colorOf(svc), pts: pix});
   }
 
-  // Legend
-  const lh = 16; const boxW = 10; const pad = 6;
-  let lx = PL+4, ly = PT+4;
-  ctx.font = '16px system-ui, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
-  for(const svc of svcNames){
-    ctx.fillStyle = colorOf(svc);
-    ctx.fillRect(lx, ly, boxW, boxW);
-    ctx.fillStyle = isDark ? '#e0e0e0' : '#000';
-    ctx.fillText(svc, lx+boxW+6, ly+boxW/2);
-    lx += Math.min(180, ctx.measureText(svc).width + boxW + 28);
-    if(lx > PL+PW-160){ lx = PL+4; ly += lh+4; }
+  // DOM Legend below the chart
+  if(legendEl){
+    const items = svcNames.map(svc=>{
+      const color = colorOf(svc);
+      return `<span class="legend-item" data-svc="${svc}"><span class="legend-swatch" style="background:${color}"></span><span class="legend-label">${svc}</span></span>`;
+    }).join('');
+    legendEl.innerHTML = items || '<span style="color:var(--muted)">No series</span>';
   }
 
   // Save state for hover rendering
