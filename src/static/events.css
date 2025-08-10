@@ -28,10 +28,11 @@ body {
     margin: 16px;
     background: var(--bg);
     color: var(--text);
+    font-size: 14px;
 }
 
 h1 {
-    font-size: 18px;
+    font-size: 20px;
     margin: 0 0 12px;
 }
 
@@ -70,7 +71,7 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 12px;
+    font-size: 14px;
 }
 
 th, td {

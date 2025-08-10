@@ -121,7 +121,7 @@ function renderChart(events){
   // Legend
   const lh = 16; const boxW = 10; const pad = 6;
   let lx = PL+4, ly = PT+4;
-  ctx.font = '12px system-ui, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.font = '14px system-ui, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
   for(const svc of svcNames){
     ctx.fillStyle = colorOf(svc);
     ctx.fillRect(lx, ly, boxW, boxW);
@@ -292,7 +292,7 @@ function redrawWithOverlay(hit){
   ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
   // tooltip
   const text = `${svc}  |  replicas=${val}  |  ${new Date(ts*1000).toLocaleString()}`;
-  ctx.font = '12px system-ui, sans-serif';
+  ctx.font = '14px system-ui, sans-serif';
   const tw = ctx.measureText(text).width + 16, th = 22;
   let tx = x + 10, ty = y - th - 8;
   if(tx + tw > chartEl.width) tx = x - tw - 10;
