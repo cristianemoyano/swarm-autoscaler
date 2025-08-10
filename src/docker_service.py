@@ -153,27 +153,7 @@ class DockerService(object):
         if(self.dryRun):
             return
 
-        # Retry on swarm "update out of sequence" transient error
-        attempts = 0
-        last_err = None
-        while attempts < 3:
-            try:
-                # Refresh service reference before each attempt
-                fresh_service = self.dockerClient.services.get(service.id)
-                fresh_service.scale(newReplicasCount)
-                return
-            except APIError as e:
-                last_err = e
-                msg = str(e).lower()
-                if "update out of sequence" in msg or "update in progress" in msg:
-                    self.logger.warning("Retrying service update due to transient error: %s", e)
-                    attempts += 1
-                    time.sleep(1.0 * attempts)
-                    continue
-                raise
-        # If all retries failed, re-raise last error for visibility
-        if last_err:
-            raise last_err
+        service.scale(newReplicasCount)
         
     def __calculateCpu(self, stats, cpuLimit):
         try:
