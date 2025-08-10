@@ -16,7 +16,15 @@ def list_events():
         limit = int(request.args.get('limit')) if request.args.get('limit') else 100
     except ValueError:
         limit = 100
-    return {"events": Events.list_events(limit=limit, service=service)}
+    def _float(q):
+        v = request.args.get(q)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    since = _float('since')
+    until = _float('until')
+    return {"events": Events.list_events(limit=limit, service=service, since=since, until=until)}
 
 @App.route('/api/events/clear', methods=['POST'])
 def clear_events():

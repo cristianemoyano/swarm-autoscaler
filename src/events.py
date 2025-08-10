@@ -88,12 +88,27 @@ class EventsStore:
             )
             self._enforce_retention(conn)
 
-    def list_events(self, limit: int = 100, service: Optional[str] = None) -> List[Dict]:
+    def list_events(
+        self,
+        limit: int = 100,
+        service: Optional[str] = None,
+        since: Optional[float] = None,
+        until: Optional[float] = None,
+    ) -> List[Dict]:
         q = "SELECT ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun FROM events"
+        where = []
         args: List = []
         if service:
-            q += " WHERE service = ?"
+            where.append("service = ?")
             args.append(service)
+        if since is not None:
+            where.append("ts >= ?")
+            args.append(float(since))
+        if until is not None:
+            where.append("ts <= ?")
+            args.append(float(until))
+        if where:
+            q += " WHERE " + " AND ".join(where)
         q += " ORDER BY ts DESC LIMIT ?"
         args.append(int(limit))
         with self._connect() as conn:

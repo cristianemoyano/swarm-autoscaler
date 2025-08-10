@@ -21,6 +21,14 @@
     <div class="controls">
       <label>Service: <input id="svc" placeholder="(all)" /></label>
       <label>Limit: <input id="limit" type="number" value="200" min="1" max="10000" /></label>
+      <label>Sort:
+        <select id="sort">
+          <option value="newest" selected>Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </label>
+      <label>From: <input id="since" type="datetime-local" /></label>
+      <label>To: <input id="until" type="datetime-local" /></label>
       <button id="refresh">Refresh</button>
       <button id="clear">Clear</button>
       <span id="status" style="margin-left:auto;color:#666;"></span>
@@ -49,7 +57,9 @@
     }
 
     function renderTable(events){
-      rowsEl.innerHTML = events.slice().reverse().map(e=>{
+      const sort = document.getElementById('sort').value;
+      const list = sort === 'oldest' ? events.slice().reverse() : events.slice();
+      rowsEl.innerHTML = list.map(e=>{
         const cls = e.delta>0? 'up' : (e.delta<0? 'down' : '');
         return `<tr>
           <td>${fmtTs(e.ts)}</td>
@@ -157,6 +167,13 @@
       const url = new URL(window.location.origin + '/api/events');
       url.searchParams.set('limit', String(limit));
       if(svc) url.searchParams.set('service', svc);
+      // datetime-local -> unix seconds
+      const sinceEl = document.getElementById('since');
+      const untilEl = document.getElementById('until');
+      const toSec = (el)=>{ if(!el || !el.value) return null; const ms = Date.parse(el.value); return isNaN(ms)? null : Math.floor(ms/1000); };
+      const s = toSec(sinceEl), u = toSec(untilEl);
+      if(s!=null) url.searchParams.set('since', String(s));
+      if(u!=null) url.searchParams.set('until', String(u));
       const t0 = performance.now();
       const res = await fetch(url);
       const data = await res.json();

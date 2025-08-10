@@ -10,8 +10,10 @@ services:
       - AUTOSCALER_INTERVAL=5
       - AUTOSCALER_DRYRUN=0
       - LOG_LEVEL=INFO
+      - EVENTS_DB_PATH=/data/events.db
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - autoscaler-events:/data
     deploy:
       mode: global
 
@@ -75,3 +77,5 @@ services:
         limits:
           cpus: '0.50'
   
+volumes:
+  autoscaler-events:
