@@ -189,14 +189,20 @@ refreshBtn.onclick = load;
 clearBtn.onclick = async () => {
   try{
     const svc = svcEl.value.trim();
+    const target = svc ? `service "${svc}"` : 'all services';
+    const confirmMsg = `This will permanently delete events for ${target}.\nAre you sure?`;
+    if(!window.confirm(confirmMsg)) return;
     const url = new URL(window.location.origin + '/api/events/clear');
     if(svc) url.searchParams.set('service', svc);
+    clearBtn.disabled = true;
     const res = await fetch(url, { method: 'POST' });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     await load();
   }catch(e){
     console.error('Failed to clear events', e);
     statusEl.textContent = 'error clearing events';
+  } finally {
+    clearBtn.disabled = false;
   }
 };
 // Auto-reload on input changes
