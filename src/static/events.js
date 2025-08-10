@@ -125,7 +125,7 @@ function renderChart(events){
   for(const svc of svcNames){
     ctx.fillStyle = colorOf(svc);
     ctx.fillRect(lx, ly, boxW, boxW);
-    ctx.fillStyle = isDark ? '#e0e0e0' : '#333';
+    ctx.fillStyle = isDark ? '#e0e0e0' : '#000';
     ctx.fillText(svc, lx+boxW+6, ly+boxW/2);
     lx += Math.min(180, ctx.measureText(svc).width + boxW + 28);
     if(lx > PL+PW-160){ lx = PL+4; ly += lh+4; }
