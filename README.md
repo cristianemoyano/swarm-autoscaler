@@ -186,6 +186,83 @@ deploy:
 - `swarm-deploy.yml`: Swarm deployment manifest (global service).
 - `Dockerfile`: Production-ready image using Gunicorn and `uv` for deps.
 
+## Samples
+
+Try ready-made Swarm stacks for CPU and memory autoscaling under `samples/`.
+
+Prerequisites:
+- Enable Swarm: `docker swarm init` (once per machine)
+
+CPU sample (exposes port 8081):
+```bash
+./samples/deploy.sh cpu
+# open http://localhost:8081
+```
+
+Memory sample (exposes port 8082):
+```bash
+./samples/deploy.sh memory
+# open http://localhost:8082
+```
+
+Cleanup:
+```bash
+docker stack rm autoscale-cpu || true
+docker stack rm autoscale-mem || true
+```
+
+Notes:
+- The sample stacks reference the autoscaler image used in `samples/swarm-stack-*.yml` (currently `clifford666/swarm-autoscaler:latest`).
+- Update the image there if you publish under a different Docker Hub user.
+
+### Observe scaling
+
+Watch the sample service tasks and overall service list:
+
+```bash
+# CPU sample
+while true; do docker service ps autoscale-cpu_sample; sleep 5; clear; done
+
+# Memory sample
+while true; do docker service ps autoscale-mem_sample; sleep 5; clear; done
+
+# Also helpful
+while true; do docker service ls; sleep 5; clear; done
+```
+
+View autoscaler logs:
+
+```bash
+# CPU sample autoscaler
+docker service logs -f autoscale-cpu_autoscaler
+
+# Memory sample autoscaler
+docker service logs -f autoscale-mem_autoscaler
+```
+
+### Force a scale event
+
+CPU sample (port 8081): generate concurrent requests to push CPU usage:
+
+```bash
+# Using hey (macOS: brew install hey)
+hey -z 2m -c 200 http://localhost:8081/
+
+# Or using ApacheBench (ab)
+ab -n 100000 -c 200 http://localhost:8081/
+```
+
+Memory sample (port 8082): nginx is light on memory by default. You can temporarily stress memory to trigger scaling:
+
+```bash
+# Replace the sample image with a stress tool for a few minutes
+# WARNING: adjust values to your machine; avoid OOM
+docker service update \
+  --image polinux/stress \
+  --args "--vm 1 --vm-bytes 100M --vm-keep --timeout 300s" \
+  autoscale-mem_sample
+```
+
 ## Publish image to Docker Hub
 
 Use the helper script to build and push your image under your Docker Hub user:
