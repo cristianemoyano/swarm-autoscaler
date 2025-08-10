@@ -52,6 +52,7 @@ function renderChart(events){
   const H = chartEl.height = 220;
   const ctx = chartEl.getContext('2d');
   ctx.clearRect(0,0,W,H);
+  const isDark = document.body.classList.contains('dark');
 
   const data = events.slice(-200).reverse(); // chronological
   if(!data.length) return;
@@ -124,7 +125,7 @@ function renderChart(events){
   for(const svc of svcNames){
     ctx.fillStyle = colorOf(svc);
     ctx.fillRect(lx, ly, boxW, boxW);
-    ctx.fillStyle = '#333';
+    ctx.fillStyle = isDark ? '#e0e0e0' : '#333';
     ctx.fillText(svc, lx+boxW+6, ly+boxW/2);
     lx += Math.min(180, ctx.measureText(svc).width + boxW + 28);
     if(lx > PL+PW-160){ lx = PL+4; ly += lh+4; }
@@ -307,7 +308,7 @@ chartEl.addEventListener('mouseleave', ()=>{ redrawWithOverlay(null); });
 
 // Theme toggle with localStorage persistence
 function applyTheme(){
-  const mode = localStorage.getItem('events_theme') || 'light';
+  const mode = localStorage.getItem('events_theme') || 'dark';
   document.body.classList.toggle('dark', mode === 'dark');
   themeEl.checked = mode === 'dark';
 }
