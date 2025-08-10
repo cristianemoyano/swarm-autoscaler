@@ -14,19 +14,7 @@
           <option value="">(all)</option>
         </select>
       </label>
-      <label>Page size:
-        <select id="limit">
-          <option value="50">50</option>
-          <option value="100" selected>100</option>
-          <option value="200">200</option>
-        </select>
-      </label>
-      <label>Sort:
-        <select id="sort">
-          <option value="newest" selected>Newest first</option>
-          <option value="oldest">Oldest first</option>
-        </select>
-      </label>
+      
       <label>From: <input id="since" type="datetime-local" /></label>
       <label>To: <input id="until" type="datetime-local" /></label>
       <button id="refresh">Refresh</button>
@@ -38,6 +26,20 @@
       <button id="prev" disabled>Previous</button>
       <span id="pageInfo"></span>
       <button id="next" disabled>Next</button>
+      <span style="margin: 0 8px; color: #999;">|</span>
+      <label>Sort:
+        <select id="sort">
+          <option value="newest" selected>Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </label>
+      <label>Page size:
+        <select id="limit">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+        </select>
+      </label>
     </div>
     <div class="table-wrap">
     <table>
