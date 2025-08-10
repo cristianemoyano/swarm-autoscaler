@@ -156,36 +156,34 @@ class DockerService(object):
         service.scale(newReplicasCount)
         
     def __calculateCpu(self, stats, cpuLimit):
-        try:
-            cpu_stats = stats.get('cpu_stats', {})
-            precpu_stats = stats.get('precpu_stats', {})
+        cpu_stats = stats.get('cpu_stats', {})
+        precpu_stats = stats.get('precpu_stats', {})
 
-            # Determine cpu count robustly
-            cpuCount = cpu_stats.get('online_cpus')
-            if not cpuCount:
-                per_cpu = ((cpu_stats.get('cpu_usage') or {}).get('percpu_usage')) or []
-                cpuCount = len(per_cpu) if isinstance(per_cpu, list) and len(per_cpu) > 0 else 1
+        # Determine cpu count robustly
+        cpuCount = cpu_stats.get('online_cpus')
+        if not cpuCount:
+            per_cpu = ((cpu_stats.get('cpu_usage') or {}).get('percpu_usage')) or []
+            cpuCount = len(per_cpu) if isinstance(per_cpu, list) and len(per_cpu) > 0 else 1
 
-            cpu_usage_total = ((cpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
-            precpu_usage_total = ((precpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
-            system_cpu = cpu_stats.get('system_cpu_usage') or 0.0
-            pre_system_cpu = precpu_stats.get('system_cpu_usage') or 0.0
+        cpu_usage_total = ((cpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
+        precpu_usage_total = ((precpu_stats.get('cpu_usage') or {}).get('total_usage')) or 0.0
+        system_cpu = cpu_stats.get('system_cpu_usage') or 0.0
+        pre_system_cpu = precpu_stats.get('system_cpu_usage') or 0.0
 
-            cpuDelta = float(cpu_usage_total) - float(precpu_usage_total)
-            systemDelta = float(system_cpu) - float(pre_system_cpu)
+        cpuDelta = float(cpu_usage_total) - float(precpu_usage_total)
+        systemDelta = float(system_cpu) - float(pre_system_cpu)
 
-            percent = 0.0
-            if cpuDelta > 0.0 and systemDelta > 0.0:
-                percent = (cpuDelta / systemDelta) * float(cpuCount) * 100.0
+        percent = 0.0
+        if cpuDelta > 0.0 and systemDelta > 0.0:
+            percent = (cpuDelta / systemDelta) * float(cpuCount) * 100.0
 
-            # Normalize by CPU limit or cpuCount
-            if cpuLimit and cpuLimit > 0:
-                percent = percent / float(cpuLimit)
-            else:
-                percent = percent / float(cpuCount if cpuCount > 0 else 1)
-            return percent
-        except Exception:
-            return 0.0
+        # Normalize by CPU limit or cpuCount
+        if cpuLimit and cpuLimit > 0:
+            percent = percent / float(cpuLimit)
+        else:
+            percent = percent / float(cpuCount if cpuCount > 0 else 1)
+        return percent
+
 
     def __calculateMemory(self, stats):
         try:
