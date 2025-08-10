@@ -1,6 +1,6 @@
 from flask import request, jsonify
 from main import App, SwarmService
-from constants import SUPPORTED_METRICS
+from constants import SUPPORTED_METRIC_STRINGS, parse_metric, metric_to_str
 
 @App.route('/', methods=['GET'])
 def root():
@@ -13,15 +13,16 @@ def getContainerStats():
         Supports metric selection: cpu (default) or memory.
     """
     containerId = request.args.get('id')
-    metric = (request.args.get('metric') or 'cpu').lower()
+    metric = (request.args.get('metric') or '').lower()
+    metric_enum = parse_metric(metric)
 
     if not containerId:
         return jsonify({"error": "Missing required query parameter 'id'"}), 400
 
-    if metric not in SUPPORTED_METRICS:
+    if metric and metric not in SUPPORTED_METRIC_STRINGS:
         return jsonify({"error": "Unsupported metric. Use 'cpu' or 'memory'"}), 400
 
-    if metric == 'cpu':
+    if metric_enum.name == 'CPU':
         cpuLimitParam = request.args.get('cpuLimit')
         if cpuLimitParam is None:
             return jsonify({"error": "Missing required query parameter 'cpuLimit' for metric=cpu"}), 400
@@ -32,10 +33,10 @@ def getContainerStats():
         value = SwarmService.getContainerCpuStat(containerId, cpuLimit)
         if value is None:
             return "Container with id=%s not running on this node" %(containerId), 404
-        return {'ContainerId': containerId, 'cpu': value}
+        return {'ContainerId': containerId, metric_to_str(metric_enum): value}
     else:
         value = SwarmService.getContainerMemoryStat(containerId)
         if value is None:
             return "Container with id=%s not running on this node" %(containerId), 404
-        return {'ContainerId': containerId, 'memory': value}
+        return {'ContainerId': containerId, metric_to_str(metric_enum): value}
 

@@ -13,8 +13,10 @@ from constants import (
     LABEL_PERCENTAGE_MIN,
     LABEL_DECREASE_MODE,
     LABEL_METRIC,
-    METRIC_CPU,
+    DEFAULT_MIN_REPLICAS,
+    DEFAULT_MAX_REPLICAS,
 )
+from constants import MetricEnum
 from decrease_mode_enum import DecreaseModeEnum
 
 class DockerService(object):
@@ -86,9 +88,11 @@ class DockerService(object):
         except:
             return default
 
-    def getServiceMetric(self, service, default: str = METRIC_CPU):
+    def getServiceMetric(self, service, default: MetricEnum = MetricEnum.CPU):
         try:
-            return service.attrs.get('Spec').get('Labels').get(self.MetricLabel, default).lower()
+            value = service.attrs.get('Spec').get('Labels').get(self.MetricLabel)
+            from constants import parse_metric  # local import to avoid cycles
+            return parse_metric(value)
         except:
             return default
 
@@ -116,10 +120,10 @@ class DockerService(object):
         nodeCount = self.__getNodesCountCached()
 
         maxReplicas = service.attrs['Spec']['Labels'].get(self.MaxReplicasLabel)
-        maxReplicas = 15 if maxReplicas == None else int(maxReplicas)
+        maxReplicas = DEFAULT_MAX_REPLICAS if maxReplicas == None else int(maxReplicas)
 
         minReplicas = service.attrs['Spec']['Labels'].get(self.MinReplicasLabel)
-        minReplicas = 2 if minReplicas == None else int(minReplicas)
+        minReplicas = DEFAULT_MIN_REPLICAS if minReplicas == None else int(minReplicas)
 
         disableManualReplicas = service.attrs['Spec']['Labels'].get(self.DisableManualReplicasControlLabel) == 'true'
 

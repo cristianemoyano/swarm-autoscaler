@@ -7,7 +7,7 @@ from discovery import Discovery
 from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
-from constants import METRIC_CPU
+from constants import MetricEnum
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -39,8 +39,8 @@ class AutoscalerService(threading.Thread):
             time.sleep(self.checkInterval)
 
     def __autoscale(self, service):
-        serviceMetric = self.swarmService.getServiceMetric(service, METRIC_CPU)
-        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service) if serviceMetric == METRIC_CPU else -1
+        serviceMetric = self.swarmService.getServiceMetric(service, MetricEnum.CPU)
+        cpuLimit = self.swarmService.getServiceCpuLimitPercent(service) if serviceMetric == MetricEnum.CPU else -1
         containers = self.swarmService.getServiceContainersId(service)
 
         if(containers == None or len(containers) == 0):
@@ -51,7 +51,7 @@ class AutoscalerService(threading.Thread):
         for id in containers:
             containerStats = self.discovery.getContainerStats(id, cpuLimit, serviceMetric)
             if(containerStats != None):
-                key = 'cpu' if serviceMetric == METRIC_CPU else 'memory'
+                key = 'cpu' if serviceMetric == MetricEnum.CPU else 'memory'
                 if key in containerStats:
                     stats.append(containerStats[key])
         if(len(stats) > 0):
