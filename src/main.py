@@ -19,8 +19,8 @@ MemoryCache = Cache()
 SwarmService = DockerService(MemoryCache, DRY_RUN)
 DiscoveryService = Discovery(DISCOVERY_DNSNAME, MemoryCache, CHECK_INTERVAL)
 
-# Import controllers
-from container_controller import *
+# Import routes
+from urls import *
 
 def _start_autoscaler_thread():
     autoscalerService = AutoscalerService(SwarmService, DiscoveryService, CHECK_INTERVAL, MIN_PERCENTAGE, MAX_PERCENTAGE)

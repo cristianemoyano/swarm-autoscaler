@@ -12,7 +12,18 @@ MAX_PERCENTAGE = float(os.getenv("AUTOSCALER_MAX_PERCENTAGE", DEFAULT_MAX_PERCEN
 DISCOVERY_DNSNAME = os.getenv("AUTOSCALER_DNSNAME", DEFAULT_DISCOVERY_DNSNAME)
 CHECK_INTERVAL = int(os.getenv("AUTOSCALER_INTERVAL", DEFAULT_CHECK_INTERVAL))
 
-# Any non-empty value enables dry run
-DRY_RUN = bool(os.getenv("AUTOSCALER_DRYRUN"))
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    s = str(val).strip().lower()
+    if s in ("1", "true", "yes", "on"):  # truthy
+        return True
+    if s in ("0", "false", "no", "off", ""):  # falsy
+        return False
+    return default
+
+# Dry run is enabled only for explicit truthy values
+DRY_RUN = _env_bool("AUTOSCALER_DRYRUN", False)
 
 

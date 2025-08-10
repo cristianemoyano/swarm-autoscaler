@@ -2,10 +2,14 @@ version: "3.8"
 
 services:
   autoscaler:
+    ports:
+      - "8080:80"
     image: clifford666/swarm-autoscaler:latest
     environment:
       - AUTOSCALER_DNSNAME=tasks.autoscaler
       - AUTOSCALER_INTERVAL=5
+      - AUTOSCALER_DRYRUN=0
+      - LOG_LEVEL=INFO
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     deploy:

@@ -80,15 +80,19 @@ class AutoscalerService(threading.Thread):
             
         try:
             if(meanValue > serviceMaxPercentage):
-                self._enqueue_scale(service, True)
+                reason = f"{metric_name} median {meanValue:.1f}% > max {serviceMaxPercentage}%"
+                self._enqueue_scale(service, True, reason, metric_name)
             elif( (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue) < serviceMinPercentage):
-                self._enqueue_scale(service, False)
+                comp = meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue
+                basis = "median" if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else "max"
+                reason = f"{metric_name} {basis} {comp:.1f}% < min {serviceMinPercentage}%"
+                self._enqueue_scale(service, False, reason, metric_name)
             else:
                 self.logger.debug("Service %s not needed to scale", service.name)
         except Exception as e:
             self.logger.error("Error while try scale service", exc_info=True)
 
-    def _enqueue_scale(self, service, scaleIn: bool) -> None:
+    def _enqueue_scale(self, service, scaleIn: bool, reason: str, metric_name: str) -> None:
         service_id = service.id
         with self._pendingLock:
             last = self._pendingActions.get(service_id)
@@ -97,7 +101,7 @@ class AutoscalerService(threading.Thread):
                 return
             self._pendingActions[service_id] = scaleIn
         try:
-            self._scaleQueue.put_nowait((service_id, scaleIn))
+            self._scaleQueue.put_nowait((service_id, scaleIn, reason, metric_name))
             self.logger.debug("Enqueued scale action for %s: %s", service.name, 'up' if scaleIn else 'down')
         except Exception:
             # Queue full or unexpected error; drop gracefully
@@ -116,13 +120,13 @@ class _ScaleWorker(threading.Thread):
     def run(self):
         while True:
             try:
-                service_id, scaleIn = self.scaleQueue.get(timeout=1.0)
+                service_id, scaleIn, reason, metric_name = self.scaleQueue.get(timeout=1.0)
             except Empty:
                 continue
             try:
                 # Refresh service reference before scaling
                 service = self.swarmService.dockerClient.services.get(service_id)
-                self.swarmService.scaleService(service, scaleIn)
+                self.swarmService.scaleService(service, scaleIn, reason=reason, metric=metric_name)
             except Exception:
                 self.logger.error("Failed to scale service id=%s", service_id, exc_info=True)
             finally:

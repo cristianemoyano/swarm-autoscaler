@@ -18,6 +18,7 @@ from constants import (
 )
 from constants import MetricEnum
 from decrease_mode_enum import DecreaseModeEnum
+from events import Events
 
 class DockerService(object):
     AutoscaleLabel = LABEL_AUTOSCALE
@@ -110,7 +111,7 @@ class DockerService(object):
         containerStats = containers[0].stats(stream=False)
         return self.__calculateMemory(containerStats)
 
-    def scaleService(self, service, scaleIn = True):
+    def scaleService(self, service, scaleIn: bool = True, reason: str = "", metric: str | None = None):
         replicated = service.attrs['Spec']['Mode'].get('Replicated')
         if(replicated == None):
             self.logger.error("Cannot scale service %s because is not replicated mode", service.name)
@@ -148,12 +149,36 @@ class DockerService(object):
             minReplicas, maxReplicas, service.name, newReplicasCount)
             return
 
-        self.logger.info("Scale service %s to %s",service.name, newReplicasCount)
+        self.logger.info("Scale service %s to %s - dryrun: %s", service.name, newReplicasCount, self.dryRun)
 
         if(self.dryRun):
+            try:
+                Events.add_scale_event(
+                    service_id=service.id,
+                    service_name=service.name,
+                    old_replicas=replicas,
+                    new_replicas=newReplicasCount,
+                    reason=reason,
+                    metric=metric,
+                    dry_run=self.dryRun,
+                )
+            except Exception:
+                pass
             return
 
         service.scale(newReplicasCount)
+        try:
+            Events.add_scale_event(
+                service_id=service.id,
+                service_name=service.name,
+                old_replicas=replicas,
+                new_replicas=newReplicasCount,
+                reason=reason,
+                metric=metric,
+                dry_run=self.dryRun,
+            )
+        except Exception:
+            pass
         
     def __calculateCpu(self, stats, cpuLimit):
         cpu_stats = stats.get('cpu_stats', {})

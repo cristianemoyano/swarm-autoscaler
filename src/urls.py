@@ -1,10 +1,34 @@
-from flask import request, jsonify
+from flask import request, jsonify, render_template
 from main import App, SwarmService
 from constants import SUPPORTED_METRIC_STRINGS, parse_metric, metric_to_str
+from events import Events
+
 
 @App.route('/', methods=['GET'])
 def root():
     return "Swarm Autoscaler is running", 200
+
+
+@App.route('/api/events', methods=['GET'])
+def list_events():
+    service = request.args.get('service')
+    try:
+        limit = int(request.args.get('limit')) if request.args.get('limit') else 100
+    except ValueError:
+        limit = 100
+    return {"events": Events.list_events(limit=limit, service=service)}
+
+@App.route('/api/events/clear', methods=['POST'])
+def clear_events():
+    service = request.args.get('service')
+    deleted = Events.clear(service=service)
+    return {"cleared": deleted, "service": service or None}
+
+
+@App.route('/events/ui', methods=['GET'])
+def events_ui():
+    return render_template('events.html'), 200, {"Content-Type": "text/html; charset=utf-8"}
+
 
 @App.route('/api/container/stats', methods=['GET'])
 def getContainerStats():
@@ -39,4 +63,5 @@ def getContainerStats():
         if value is None:
             return "Container with id=%s not running on this node" %(containerId), 404
         return {'ContainerId': containerId, metric_to_str(metric_enum): value}
+
 
