@@ -7,7 +7,7 @@ from discovery import Discovery
 from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
-from constants import MetricEnum
+from constants import MetricEnum, metric_to_str
 
 class AutoscalerService(threading.Thread):
     def __init__(self, swarmService: DockerService, discovery: Discovery, checkInterval: int, minPercentage: int, maxPercentage: int):
@@ -48,18 +48,17 @@ class AutoscalerService(threading.Thread):
             return
 
         stats = []
+        metric_key = metric_to_str(serviceMetric)
         for id in containers:
-            containerStats = self.discovery.getContainerStats(id, cpuLimit, serviceMetric)
-            if(containerStats != None):
-                key = 'cpu' if serviceMetric == MetricEnum.CPU else 'memory'
-                if key in containerStats:
-                    stats.append(containerStats[key])
+            containerStats = self.discovery.getContainerStats(id, cpuLimit, metric_key)
+            if(containerStats != None and metric_key in containerStats):
+                stats.append(containerStats[metric_key])
         if(len(stats) > 0):
             self.__scale(service, stats)
 
     def __scale(self, service, stats):
         """
-            Method where calculate median and max cpu percentage of service replicas and inc or dec replicas count
+            Calculate median and max metric percentage of service replicas and inc or dec replicas count
         """
         meanValue = statistics.median(stats)
         maxValue = max(stats)
