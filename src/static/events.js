@@ -13,6 +13,8 @@ const sinceEl = document.getElementById('since');
 const untilEl = document.getElementById('until');
 const refreshBtn = document.getElementById('refresh');
 const clearBtn = document.getElementById('clear');
+const liveEl = document.getElementById('live');
+let liveTimer = null;
 
 function setLoadingState(isLoading){
   const ctrls = [svcEl, limitEl, sortEl, sinceEl, untilEl, refreshBtn, clearBtn];
@@ -200,11 +202,53 @@ clearBtn.onclick = async () => {
 // Auto-reload on input changes
 [svcEl, sortEl].forEach(el => el.addEventListener('change', load));
 [limitEl, sinceEl, untilEl].forEach(el => el.addEventListener('change', load));
-setInterval(load, 5000);
+// Initial fetch only; no auto-reload to avoid flicker and unnecessary requests
 populateServices().then(load).catch(()=>load());
 
 prevBtn.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; load(); }});
 nextBtn.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; load(); }});
+
+// Live updates: only fetch the first page and append/prepend differences without full redraw flicker
+liveEl.addEventListener('change', ()=>{
+  if(liveEl.checked){
+    // Force newest-first, page 1
+    currentPage = 1;
+    sortEl.value = 'newest';
+    const tick = async ()=>{
+      if(!liveEl.checked){ clearInterval(liveTimer); liveTimer=null; return; }
+      try{
+        const svc = svcEl.value;
+        const limit = parseInt(limitEl.value||'100',10);
+        const url = new URL(window.location.origin + '/api/events');
+        url.searchParams.set('page_size', String(limit));
+        url.searchParams.set('page', '1');
+        if(svc) url.searchParams.set('service', svc);
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // Merge if currentPage still 1 and sort newest
+        if(currentPage===1 && sortEl.value==='newest'){
+          statusEl.textContent = `events=${data.events.length}/${data.total}`;
+          currentPage = data.page || 1;
+          totalPages = Math.max(1, Math.ceil((data.total||0) / (data.page_size||limit)));
+          pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+          prevBtn.disabled = true;
+          nextBtn.disabled = currentPage >= totalPages;
+          // Render without toggling disabled/loading states
+          renderTable(data.events);
+          window._lastEvents = data.events;
+          renderChart(window._lastEvents);
+        }
+      }catch(e){ /* best-effort */ }
+    };
+    if(liveTimer) clearInterval(liveTimer);
+    tick();
+    liveTimer = setInterval(tick, 5000);
+  }else{
+    if(liveTimer) clearInterval(liveTimer);
+    liveTimer = null;
+  }
+});
 
 // Hover interaction: crosshair + tooltip for nearest point
 function redrawWithOverlay(hit){
