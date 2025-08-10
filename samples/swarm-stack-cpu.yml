@@ -9,7 +9,7 @@ services:
       - AUTOSCALER_DNSNAME=tasks.autoscaler
       - AUTOSCALER_INTERVAL=1
       - AUTOSCALER_DRYRUN=0
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=INFO
       - EVENTS_DB_PATH=/data/events.db
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

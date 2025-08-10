@@ -225,13 +225,10 @@ if(relativeEl){
   relativeEl.addEventListener('change', ()=>{
     const rel = relativeEl.value;
     if(rel && rel !== 'all'){
-      // Clear absolute dates and stop live
+      // Clear absolute dates and stop live; keep toggle enabled
       if(sinceEl) sinceEl.value = '';
       if(untilEl) untilEl.value = '';
       stopLive();
-      if(liveEl) liveEl.disabled = true;
-    } else {
-      if(liveEl) liveEl.disabled = false;
     }
     load();
   });
@@ -245,6 +242,8 @@ nextBtn.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage+
 // Live updates: only fetch the first page and append/prepend differences without full redraw flicker
 liveEl.addEventListener('change', ()=>{
   if(liveEl.checked){
+    // Reset relative/absolute filters when enabling live
+    if(relativeEl) relativeEl.value = 'all';
     // Clear date filters when enabling live
     if(sinceEl) sinceEl.value = '';
     if(untilEl) untilEl.value = '';
@@ -297,9 +296,8 @@ function updateLiveAvailability(){
   const relActive = Boolean(relativeEl && relativeEl.value && relativeEl.value !== 'all');
   if(dateActive || relActive){
     stopLive();
-    if(liveEl) liveEl.disabled = true;
   } else {
-    if(liveEl) liveEl.disabled = false;
+    // no-op
   }
 }
 
