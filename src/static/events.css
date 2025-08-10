@@ -73,6 +73,22 @@ thead th {
     z-index: 1;
 }
 
+/* Dark theme */
+body.dark {
+    background: #121212;
+    color: #e0e0e0;
+}
+body.dark h1 { color: #e0e0e0; }
+body.dark .controls label { color: #ccc; }
+body.dark table { color: #e0e0e0; }
+body.dark th, body.dark td { border-bottom-color: #333; }
+body.dark thead th { background: #1e1e1e; }
+body.dark #chart { border-color: #333; }
+body.dark .table-wrap { border-color: #333; }
+body.dark .pager button { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; }
+body.dark .pager button:disabled { opacity: .6; }
+body.dark #clear { background: #b00020; border-color: #7f0016; }
+
 /* Danger action for Clear button */
 #clear {
     background: #d32f2f;

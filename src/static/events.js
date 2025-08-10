@@ -14,6 +14,7 @@ const untilEl = document.getElementById('until');
 const refreshBtn = document.getElementById('refresh');
 const clearBtn = document.getElementById('clear');
 const liveEl = document.getElementById('live');
+const themeEl = document.getElementById('theme');
 let liveTimer = null;
 
 function setLoadingState(isLoading){
@@ -303,3 +304,16 @@ chartEl.addEventListener('mousemove', (e)=>{
 chartEl.addEventListener('mouseleave', ()=>{ redrawWithOverlay(null); });
 
 
+
+// Theme toggle with localStorage persistence
+function applyTheme(){
+  const mode = localStorage.getItem('events_theme') || 'light';
+  document.body.classList.toggle('dark', mode === 'dark');
+  themeEl.checked = mode === 'dark';
+}
+applyTheme();
+themeEl.addEventListener('change', ()=>{
+  const mode = themeEl.checked ? 'dark' : 'light';
+  localStorage.setItem('events_theme', mode);
+  applyTheme();
+});
