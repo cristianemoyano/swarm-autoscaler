@@ -80,6 +80,23 @@ services:
       resources:
         limits:
           cpus: '0.50'
+
+  sample_4:
+    image: nginx:alpine
+    ports:
+      - target: 80
+        published: 8084
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "swarm.autoscale=true"
+        - "swarm.autoscale.metric=cpu"
+        - "swarm.autoscale.percentage-max=50"
+        - "swarm.autoscale.percentage-min=15"
+        - "swarm.autoscale.min=2"
+        - "swarm.autoscale.max=5"
   
 volumes:
   autoscaler-events:

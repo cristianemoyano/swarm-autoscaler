@@ -7,7 +7,14 @@ from discovery import Discovery
 from decrease_mode_enum import DecreaseModeEnum
 
 from docker_service import DockerService
-from constants import MetricEnum, metric_to_str
+from constants import (
+    MetricEnum,
+    metric_to_str,
+    LABEL_MIN_REPLICAS,
+    LABEL_MAX_REPLICAS,
+    DEFAULT_MIN_REPLICAS,
+    DEFAULT_MAX_REPLICAS,
+)
 from queue import Queue, Empty
 
 class AutoscalerService(threading.Thread):
@@ -27,6 +34,8 @@ class AutoscalerService(threading.Thread):
         self._scaleWorker = _ScaleWorker(self.swarmService, self._scaleQueue, self._pendingActions, self._pendingLock)
         self._scaleWorker.daemon = True
         self._scaleWorker.start()
+        # Track last observed autoscalable services count to avoid noisy logs
+        self._lastServiceCount = None
  
     def run(self):
         """
@@ -41,7 +50,13 @@ class AutoscalerService(threading.Thread):
                 # Evaluate all services that define autoscale label (true/false)
                 services = self.swarmService.getServicesWithAutoscaleLabel()
                 services = services if services is not None else []
-                self.logger.debug("Services len: %s", len(services))
+                cur_count = len(services)
+                if self._lastServiceCount is None or cur_count > self._lastServiceCount:
+                    if self._lastServiceCount is None:
+                        self.logger.info("Services for autoscaling: %s", cur_count)
+                    else:
+                        self.logger.info("Services for autoscaling increased: %s -> %s", self._lastServiceCount, cur_count)
+                    self._lastServiceCount = cur_count
                 # Don't block on slower services; process as results come in
                 list(self.autoscaleServicePool.imap_unordered(self.__autoscale, services))
             except Exception as e:
@@ -81,14 +96,30 @@ class AutoscalerService(threading.Thread):
             
         try:
             autoscale_enabled = self.swarmService.isAutoscaleEnabled(service)
+
+            # Current replicas and bounds
+            labels = (service.attrs.get('Spec', {}) or {}).get('Labels', {}) or {}
+            replicated = (service.attrs.get('Spec', {}) or {}).get('Mode', {}).get('Replicated') or {}
+            replicas = int(replicated.get('Replicas', 0))
+            minReplicas = int(labels.get(LABEL_MIN_REPLICAS, DEFAULT_MIN_REPLICAS))
+            maxReplicas = int(labels.get(LABEL_MAX_REPLICAS, DEFAULT_MAX_REPLICAS))
+
             scale_up_needed = meanValue > serviceMaxPercentage
             scale_down_threshold = (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue)
             scale_down_needed = scale_down_threshold < serviceMinPercentage
 
+            # Respect replica bounds early to avoid enqueue noise
+            if scale_up_needed and replicas >= maxReplicas:
+                self.logger.debug("Service %s at max replicas (%s); skipping scale up", service.name, maxReplicas)
+                scale_up_needed = False
+            if scale_down_needed and replicas <= minReplicas:
+                self.logger.debug("Service %s at min replicas (%s); skipping scale down", service.name, minReplicas)
+                scale_down_needed = False
+
             if scale_up_needed:
                 reason = f"{metric_name} median {meanValue:.1f}% > max {serviceMaxPercentage}%"
                 if not autoscale_enabled:
-                    self.logger.warning("Service %s would scale up but autoscale=false. %s", service.name, reason)
+                    self.logger.warning("Service %s would scale up to %s but autoscale=false. %s", service.name, replicas+1, reason)
                 else:
                     self._enqueue_scale(service, True, reason, metric_name)
             elif scale_down_needed:
@@ -96,7 +127,7 @@ class AutoscalerService(threading.Thread):
                 basis = "median" if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else "max"
                 reason = f"{metric_name} {basis} {comp:.1f}% < min {serviceMinPercentage}%"
                 if not autoscale_enabled:
-                    self.logger.warning("Service %s would scale down but autoscale=false. %s", service.name, reason)
+                    self.logger.warning("Service %s would scale down to %s but autoscale=false. %s", service.name, max(replicas-1, minReplicas), reason)
                 else:
                     self._enqueue_scale(service, False, reason, metric_name)
             else:
