@@ -209,7 +209,8 @@ clearBtn.onclick = async () => {
 };
 // Auto-reload on input changes
 [svcEl, sortEl].forEach(el => el.addEventListener('change', load));
-[limitEl, sinceEl, untilEl].forEach(el => el.addEventListener('change', load));
+[limitEl].forEach(el => el.addEventListener('change', load));
+[sinceEl, untilEl].forEach(el => el.addEventListener('change', ()=>{ updateLiveAvailability(); load(); }));
 // Initial fetch only; no auto-reload to avoid flicker and unnecessary requests
 populateServices().then(load).catch(()=>load());
 
@@ -257,6 +258,21 @@ liveEl.addEventListener('change', ()=>{
     liveTimer = null;
   }
 });
+
+function stopLive(){
+  if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
+  liveEl.checked = false;
+}
+
+function updateLiveAvailability(){
+  const dateActive = Boolean((sinceEl && sinceEl.value) || (untilEl && untilEl.value));
+  if(dateActive){
+    stopLive();
+    liveEl.disabled = true;
+  } else {
+    liveEl.disabled = false;
+  }
+}
 
 // Hover interaction: crosshair + tooltip for nearest point
 function redrawWithOverlay(hit){
@@ -318,3 +334,12 @@ themeEl.addEventListener('change', ()=>{
   localStorage.setItem('events_theme', mode);
   applyTheme();
 });
+
+// Start live if checkbox default is checked
+if(liveEl.checked){
+  const evt = new Event('change');
+  liveEl.dispatchEvent(evt);
+}
+
+// Initialize live availability on load
+updateLiveAvailability();
