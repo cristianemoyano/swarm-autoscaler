@@ -32,6 +32,10 @@ def clear_events():
     deleted = Events.clear(service=service)
     return {"cleared": deleted, "service": service or None}
 
+@App.route('/api/events/services', methods=['GET'])
+def list_event_services():
+    return {"services": Events.list_services()}
+
 
 @App.route('/events/ui', methods=['GET'])
 def events_ui():

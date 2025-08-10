@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import logging
 from time import time
 from typing import Dict, List, Optional
 
@@ -9,11 +10,14 @@ class EventsStore:
 
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or os.getenv("EVENTS_DB_PATH", "/app/events.db")
+        self.logger = logging.getLogger("EventsStore")
         # Maximum rows to keep; oldest rows are evicted when limit is exceeded
         try:
             self.max_events = int(os.getenv("EVENTS_MAX_ROWS", "10000"))
         except ValueError:
             self.max_events = 10000
+        # Services cache (per-process) – invalidated on writes
+        self._services_cache: Optional[list[str]] = None
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -27,7 +31,7 @@ class EventsStore:
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA busy_timeout=5000;")
         except Exception:
-            pass
+            self.logger.warning("Failed to set SQLite pragmas", exc_info=True)
         return conn
 
     def _init_db(self) -> None:
@@ -87,6 +91,8 @@ class EventsStore:
                 ),
             )
             self._enforce_retention(conn)
+        # Invalidate services cache
+        self._services_cache = None
 
     def list_events(
         self,
@@ -137,6 +143,8 @@ class EventsStore:
         with self._connect() as conn:
             cur = conn.execute(q, args)
             return cur.rowcount if cur.rowcount is not None else 0
+        # Invalidate services cache
+        self._services_cache = None
 
     def _enforce_retention(self, conn: sqlite3.Connection) -> None:
         """Delete oldest rows so only the most recent max_events remain."""
@@ -149,8 +157,16 @@ class EventsStore:
                     (overflow,),
                 )
         except Exception:
-            # Best effort; ignore retention failures
-            pass
+            self.logger.warning("Failed to enforce events retention", exc_info=True)
+
+    def list_services(self) -> List[str]:
+        if self._services_cache is not None:
+            return list(self._services_cache)
+        with self._connect() as conn:
+            rows = conn.execute("SELECT DISTINCT service FROM events ORDER BY service ASC").fetchall()
+        services = [r[0] for r in rows]
+        self._services_cache = services
+        return services
 
 
 Events = EventsStore()

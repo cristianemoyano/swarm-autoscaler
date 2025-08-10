@@ -19,7 +19,11 @@
   <body>
     <h1>Scale Events</h1>
     <div class="controls">
-      <label>Service: <input id="svc" placeholder="(all)" /></label>
+      <label>Service:
+        <select id="svc">
+          <option value="">(all)</option>
+        </select>
+      </label>
       <label>Limit: <input id="limit" type="number" value="200" min="1" max="10000" /></label>
       <label>Sort:
         <select id="sort">
@@ -53,7 +57,7 @@
 
     function fmtTs(ts){
       const d = new Date(ts*1000);
-      return d.toISOString().replace('T',' ').replace('Z','');
+      return d.toLocaleString();
     }
 
     function renderTable(events){
@@ -161,39 +165,64 @@
       window._chartState = { W,H, PL,PT,PW,PH, tMin,tMax, yMin,yMax, seriesPts };
     }
 
+    async function populateServices(){
+      try{
+        const res = await fetch('/api/events/services');
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const opts = ['<option value="">(all)</option>'].concat((data.services||[]).map(s=>`<option value="${s}">${s}</option>`));
+        svcEl.innerHTML = opts.join('');
+      }catch(e){
+        console.error('Failed to load services', e);
+        statusEl.textContent = 'error loading services';
+      }
+    }
+
     async function load(){
-      const svc = svcEl.value.trim();
-      const limit = parseInt(limitEl.value||'200',10);
-      const url = new URL(window.location.origin + '/api/events');
-      url.searchParams.set('limit', String(limit));
-      if(svc) url.searchParams.set('service', svc);
-      // datetime-local -> unix seconds
-      const sinceEl = document.getElementById('since');
-      const untilEl = document.getElementById('until');
-      const toSec = (el)=>{ if(!el || !el.value) return null; const ms = Date.parse(el.value); return isNaN(ms)? null : Math.floor(ms/1000); };
-      const s = toSec(sinceEl), u = toSec(untilEl);
-      if(s!=null) url.searchParams.set('since', String(s));
-      if(u!=null) url.searchParams.set('until', String(u));
-      const t0 = performance.now();
-      const res = await fetch(url);
-      const data = await res.json();
-      const dt = (performance.now()-t0).toFixed(0);
-      statusEl.textContent = `events=${data.events.length} (${dt}ms)`;
-      renderTable(data.events);
-      window._lastEvents = data.events;
-      renderChart(window._lastEvents);
+      try{
+        const svc = svcEl.value;
+        const limit = parseInt(limitEl.value||'200',10);
+        const url = new URL(window.location.origin + '/api/events');
+        url.searchParams.set('limit', String(limit));
+        if(svc) url.searchParams.set('service', svc);
+        // datetime-local -> unix seconds
+        const sinceEl = document.getElementById('since');
+        const untilEl = document.getElementById('until');
+        const toSec = (el)=>{ if(!el || !el.value) return null; const ms = Date.parse(el.value); return isNaN(ms)? null : Math.floor(ms/1000); };
+        const s = toSec(sinceEl), u = toSec(untilEl);
+        if(s!=null) url.searchParams.set('since', String(s));
+        if(u!=null) url.searchParams.set('until', String(u));
+        const t0 = performance.now();
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const dt = (performance.now()-t0).toFixed(0);
+        statusEl.textContent = `events=${data.events.length} (${dt}ms)`;
+        renderTable(data.events);
+        window._lastEvents = data.events;
+        renderChart(window._lastEvents);
+      }catch(e){
+        console.error('Failed to load events', e);
+        statusEl.textContent = 'error loading events';
+      }
     }
 
     document.getElementById('refresh').onclick = load;
     document.getElementById('clear').onclick = async () => {
-      const svc = svcEl.value.trim();
-      const url = new URL(window.location.origin + '/api/events/clear');
-      if(svc) url.searchParams.set('service', svc);
-      const res = await fetch(url, { method: 'POST' });
-      if(res.ok){ await load(); }
+      try{
+        const svc = svcEl.value.trim();
+        const url = new URL(window.location.origin + '/api/events/clear');
+        if(svc) url.searchParams.set('service', svc);
+        const res = await fetch(url, { method: 'POST' });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        await load();
+      }catch(e){
+        console.error('Failed to clear events', e);
+        statusEl.textContent = 'error clearing events';
+      }
     };
     setInterval(load, 5000);
-    load();
+    populateServices().then(load).catch(()=>load());
 
     // Hover interaction: crosshair + tooltip for nearest point
     function redrawWithOverlay(hit){
