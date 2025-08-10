@@ -59,6 +59,24 @@ class DockerService(object):
         enabledAutoscaleServices = list((x for x in allServices if x.attrs['Spec']['Labels'][self.AutoscaleLabel] == 'true'))
         return enabledAutoscaleServices
 
+    def getServicesWithAutoscaleLabel(self):
+        """
+        Return all services that define the autoscale label (true or false).
+        This allows the autoscaler to evaluate metrics and emit warnings even
+        when autoscaling is explicitly disabled on a service.
+        """
+        try:
+            services = self.dockerClient.services.list(filters={'label': self.AutoscaleLabel})
+            return services or []
+        except Exception:
+            return []
+
+    def isAutoscaleEnabled(self, service) -> bool:
+        try:
+            return service.attrs.get('Spec', {}).get('Labels', {}).get(self.AutoscaleLabel) == 'true'
+        except Exception:
+            return False
+
     def getServiceContainersId(self, service):
         tasks = service.tasks({'desired-state':'running'})
         if(len(tasks) == 0):

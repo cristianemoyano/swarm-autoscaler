@@ -16,6 +16,10 @@ services:
       - autoscaler-events:/data
     deploy:
       mode: global
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 100M
 
   sample_1:
     image: nginx:alpine
@@ -27,7 +31,7 @@ services:
     deploy:
       replicas: 2
       labels:
-        - "swarm.autoscale=true"
+        - "swarm.autoscale=false"
         - "swarm.autoscale.metric=cpu"
         - "swarm.autoscale.percentage-max=50"
         - "swarm.autoscale.percentage-min=15"

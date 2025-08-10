@@ -38,8 +38,9 @@ class AutoscalerService(threading.Thread):
                     self.logger.warning("Instance running not on manager or not on leader")
                     time.sleep(60*10) # Wait 10 minute
                     continue
-                services = self.swarmService.getAutoscaleServices()
-                services = services if services != None else []
+                # Evaluate all services that define autoscale label (true/false)
+                services = self.swarmService.getServicesWithAutoscaleLabel()
+                services = services if services is not None else []
                 self.logger.debug("Services len: %s", len(services))
                 # Don't block on slower services; process as results come in
                 list(self.autoscaleServicePool.imap_unordered(self.__autoscale, services))
@@ -79,14 +80,25 @@ class AutoscalerService(threading.Thread):
         self.logger.debug("Metric=%s | Service=%s | Mean=%s | Max=%s", metric_name, service.name, meanValue, maxValue)
             
         try:
-            if(meanValue > serviceMaxPercentage):
+            autoscale_enabled = self.swarmService.isAutoscaleEnabled(service)
+            scale_up_needed = meanValue > serviceMaxPercentage
+            scale_down_threshold = (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue)
+            scale_down_needed = scale_down_threshold < serviceMinPercentage
+
+            if scale_up_needed:
                 reason = f"{metric_name} median {meanValue:.1f}% > max {serviceMaxPercentage}%"
-                self._enqueue_scale(service, True, reason, metric_name)
-            elif( (meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue) < serviceMinPercentage):
-                comp = meanValue if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else maxValue
+                if not autoscale_enabled:
+                    self.logger.warning("Service %s would scale up but autoscale=false. %s", service.name, reason)
+                else:
+                    self._enqueue_scale(service, True, reason, metric_name)
+            elif scale_down_needed:
+                comp = scale_down_threshold
                 basis = "median" if serviceDecreaseMode == DecreaseModeEnum.MEDIAN else "max"
                 reason = f"{metric_name} {basis} {comp:.1f}% < min {serviceMinPercentage}%"
-                self._enqueue_scale(service, False, reason, metric_name)
+                if not autoscale_enabled:
+                    self.logger.warning("Service %s would scale down but autoscale=false. %s", service.name, reason)
+                else:
+                    self._enqueue_scale(service, False, reason, metric_name)
             else:
                 self.logger.debug("Service %s not needed to scale", service.name)
         except Exception as e:
