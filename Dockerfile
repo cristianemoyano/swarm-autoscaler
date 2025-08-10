@@ -12,5 +12,6 @@ RUN uv pip install --system -r /requirements.txt
 # App code
 COPY src/*.py /app/
 COPY src/templates /app/templates
+COPY src/static /app/static
 WORKDIR /app
 CMD ["gunicorn", "-w", "2", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:80", "main:App"]

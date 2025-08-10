@@ -100,6 +100,7 @@ class EventsStore:
         service: Optional[str] = None,
         since: Optional[float] = None,
         until: Optional[float] = None,
+        offset: int = 0,
     ) -> List[Dict]:
         q = "SELECT ts, serviceId, service, old, new, delta, direction, reason, metric, dryRun FROM events"
         where = []
@@ -115,8 +116,9 @@ class EventsStore:
             args.append(float(until))
         if where:
             q += " WHERE " + " AND ".join(where)
-        q += " ORDER BY ts DESC LIMIT ?"
+        q += " ORDER BY ts DESC LIMIT ? OFFSET ?"
         args.append(int(limit))
+        args.append(int(max(0, offset)))
         with self._connect() as conn:
             rows = conn.execute(q, args).fetchall()
         def to_obj(r):
@@ -133,6 +135,30 @@ class EventsStore:
                 "dryRun": bool(r[9]),
             }
         return [to_obj(r) for r in rows]
+
+    def count_events(
+        self,
+        service: Optional[str] = None,
+        since: Optional[float] = None,
+        until: Optional[float] = None,
+    ) -> int:
+        q = "SELECT COUNT(*) FROM events"
+        where = []
+        args: List = []
+        if service:
+            where.append("service = ?")
+            args.append(service)
+        if since is not None:
+            where.append("ts >= ?")
+            args.append(float(since))
+        if until is not None:
+            where.append("ts <= ?")
+            args.append(float(until))
+        if where:
+            q += " WHERE " + " AND ".join(where)
+        with self._connect() as conn:
+            row = conn.execute(q, args).fetchone()
+        return int(row[0] if row else 0)
 
     def clear(self, service: Optional[str] = None) -> int:
         q = "DELETE FROM events"

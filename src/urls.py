@@ -12,10 +12,19 @@ def root():
 @App.route('/api/events', methods=['GET'])
 def list_events():
     service = request.args.get('service')
+    page_size_options = [50, 100, 200]
     try:
-        limit = int(request.args.get('limit')) if request.args.get('limit') else 100
+        page_size = int(request.args.get('page_size')) if request.args.get('page_size') else 100
     except ValueError:
-        limit = 100
+        page_size = 100
+    if page_size not in page_size_options:
+        page_size = 100
+    try:
+        page = int(request.args.get('page')) if request.args.get('page') else 1
+    except ValueError:
+        page = 1
+    page = max(1, page)
+    offset = (page - 1) * page_size
     def _float(q):
         v = request.args.get(q)
         try:
@@ -24,7 +33,9 @@ def list_events():
             return None
     since = _float('since')
     until = _float('until')
-    return {"events": Events.list_events(limit=limit, service=service, since=since, until=until)}
+    total = Events.count_events(service=service, since=since, until=until)
+    events = Events.list_events(limit=page_size, service=service, since=since, until=until, offset=offset)
+    return {"events": events, "page": page, "page_size": page_size, "total": total, "page_size_options": page_size_options}
 
 @App.route('/api/events/clear', methods=['POST'])
 def clear_events():
