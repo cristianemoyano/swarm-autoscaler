@@ -12,6 +12,7 @@ const sortEl = document.getElementById('sort');
 const legendEl = document.getElementById('legend');
 const sinceEl = document.getElementById('since');
 const untilEl = document.getElementById('until');
+const relativeEl = document.getElementById('relative');
 const refreshBtn = document.getElementById('refresh');
 const clearBtn = document.getElementById('clear');
 const liveEl = document.getElementById('live');
@@ -19,7 +20,7 @@ const themeEl = document.getElementById('theme');
 let liveTimer = null;
 
 function setLoadingState(isLoading){
-  const ctrls = [svcEl, limitEl, sortEl, sinceEl, untilEl, refreshBtn, clearBtn];
+  const ctrls = [svcEl, limitEl, sortEl, sinceEl, untilEl, relativeEl, refreshBtn, clearBtn];
   ctrls.forEach(el => { if(el) el.disabled = isLoading; });
   if(isLoading) statusEl.textContent = 'loading...';
 }
@@ -159,7 +160,19 @@ async function load(){
     if(svc) url.searchParams.set('service', svc);
     // datetime-local -> unix seconds
     const toSec = (el)=>{ if(!el || !el.value) return null; const ms = Date.parse(el.value); return isNaN(ms)? null : Math.floor(ms/1000); };
-    const s = toSec(sinceEl), u = toSec(untilEl);
+    // Relative range takes precedence
+    const nowSec = Math.floor(Date.now()/1000);
+    const rel = (relativeEl && relativeEl.value) || 'all';
+    let s = toSec(sinceEl), u = toSec(untilEl);
+    if(rel && rel !== 'all'){
+      let delta = 0;
+      if(rel.endsWith('m')) delta = parseInt(rel,10) * 60;
+      if(rel.endsWith('h')) delta = parseInt(rel,10) * 3600;
+      if(delta>0){
+        u = nowSec;
+        s = nowSec - delta;
+      }
+    }
     if(s!=null) url.searchParams.set('since', String(s));
     if(u!=null) url.searchParams.set('until', String(u));
     const t0 = performance.now();
@@ -208,6 +221,21 @@ clearBtn.onclick = async () => {
 [svcEl, sortEl].forEach(el => el.addEventListener('change', load));
 [limitEl].forEach(el => el.addEventListener('change', load));
 [sinceEl, untilEl].forEach(el => el.addEventListener('change', ()=>{ updateLiveAvailability(); load(); }));
+if(relativeEl){
+  relativeEl.addEventListener('change', ()=>{
+    const rel = relativeEl.value;
+    if(rel && rel !== 'all'){
+      // Clear absolute dates and stop live
+      if(sinceEl) sinceEl.value = '';
+      if(untilEl) untilEl.value = '';
+      stopLive();
+      if(liveEl) liveEl.disabled = true;
+    } else {
+      if(liveEl) liveEl.disabled = false;
+    }
+    load();
+  });
+}
 // Initial fetch only; no auto-reload to avoid flicker and unnecessary requests
 populateServices().then(load).catch(()=>load());
 
@@ -266,10 +294,12 @@ function stopLive(){
 
 function updateLiveAvailability(){
   const dateActive = Boolean((sinceEl && sinceEl.value) || (untilEl && untilEl.value));
-  if(dateActive){
+  const relActive = Boolean(relativeEl && relativeEl.value && relativeEl.value !== 'all');
+  if(dateActive || relActive){
     stopLive();
+    if(liveEl) liveEl.disabled = true;
   } else {
-    // no-op; keep live toggle enabled
+    if(liveEl) liveEl.disabled = false;
   }
 }
 
