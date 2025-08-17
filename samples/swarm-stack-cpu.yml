@@ -84,23 +84,23 @@ services:
         - "autoscaler.min=2"
         - "autoscaler.max=5"
 
-  # sample_2:
-  #   image: nginx:alpine
-  #   networks:
-  #     - autoscaler_net
-  #   ports:
-  #     - target: 80
-  #       published: 8082
-  #       protocol: tcp
-  #       mode: ingress
-  #   deploy:
-  #     replicas: 2
-  #     labels:
-  #       - "autoscaler.enabled=true"
-  #       - "autoscaler.metric=cpu"
-  #       - "autoscaler.cpu.threshold=50"
-  #       - "autoscaler.min=2"
-  #       - "autoscaler.max=5"
+  sample_2:
+    image: nginx:alpine
+    networks:
+      - autoscaler_net
+    ports:
+      - target: 80
+        published: 8082
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 2
+      labels:
+        - "autoscaler.enabled=true"
+        - "autoscaler.metric=cpu"
+        - "autoscaler.cpu.threshold=50"
+        - "autoscaler.min=2"
+        - "autoscaler.max=5"
 
   # sample_3:
   #   image: nginx:alpine
