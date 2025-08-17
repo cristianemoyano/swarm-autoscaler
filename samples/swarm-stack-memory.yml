@@ -1,18 +1,65 @@
-version: "3.8"
-
 services:
-  autoscaler:
-    image: clifford666/swarm-autoscaler:latest
+  service-registry:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
     environment:
-      - AUTOSCALER_DNSNAME=tasks.autoscaler
-      - AUTOSCALER_INTERVAL=30
+      - ROLE=service-registry
+      - DOCKER_BASE_URL=unix:///var/run/docker.sock
+      - REFRESH_INTERVAL_SEC=30
+      - METRICS_REFRESH_INTERVAL_SEC=60
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - autoscaler_net
     deploy:
-      mode: global
+      mode: replicated
+      replicas: 1
+
+  autoscaler:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=autoscaler
+      - DOCKER_SERVICE_URL=http://docker-service:5004
+      - SERVICE_REGISTRY_URL=http://service-registry:5001
+      - SCALE_COOLDOWN_SEC=60
+      - POLL_INTERVAL_SEC=30
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  docker-service:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=docker-service
+      - DOCKER_BASE_URL=unix:///var/run/docker.sock
+      - DATABASE_URL=sqlite:////data/events.db
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker_service_data:/data
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  ui:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=ui
+      - DOCKER_SERVICE_URL=http://docker-service:5004
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+    ports:
+      - "8080:5005"
 
   sample:
     image: python:3.13-alpine
+    networks:
+      - autoscaler_net
     command: ["python", "-c", "import os,time; mb=int(os.getenv('MEM_HOG_MB','220')); dur=int(os.getenv('MEM_HOG_DURATION','300')); blobs=[bytearray(1024*1024) for _ in range(mb)]; time.sleep(dur)"]
     environment:
       - MEM_HOG_MB=220        # adjust to tune memory pressure
@@ -20,13 +67,22 @@ services:
     deploy:
       replicas: 2
       labels:
-        - "swarm.autoscale=true"
-        - "swarm.autoscale.metric=memory"
-        - "swarm.autoscale.percentage-max=80"
-        - "swarm.autoscale.percentage-min=30"
-        - "swarm.autoscale.min=1"
-        - "swarm.autoscale.max=5"
+        - "autoscaler.enabled=true"
+        - "autoscaler.metric=memory"
+        - "autoscaler.memory.threshold=80"
+        - "autoscaler.min=1"
+        - "autoscaler.max=5"
+        - "autoscaler.memory.limit_bytes=268435456"  # 256 MiB, match resources.limits
       resources:
         limits:
           cpus: '0.50'
           memory: '256M'
+
+networks:
+  autoscaler_net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  docker_service_data:
+    driver: local
