@@ -16,7 +16,7 @@ cd "$REPO_ROOT"
 
 DOCKERHUB_USER="${1:-${DOCKERHUB_USER:-}}"
 TAG="${2:-${TAG:-latest}}"
-IMAGE_NAME="${IMAGE_NAME:-swarm-autoscaler}"
+IMAGE_NAME="${IMAGE_NAME:-swarm-autoscaler-suite}"
 
 if [[ -z "${DOCKERHUB_USER}" ]]; then
   echo "Usage: $0 <dockerhub_user> [tag]" 1>&2
@@ -26,8 +26,8 @@ fi
 
 FULL_IMAGE="${DOCKERHUB_USER}/${IMAGE_NAME}:${TAG}"
 
-echo "[build] Building image ${FULL_IMAGE} ..."
-docker build -t "${FULL_IMAGE}" .
+echo "[build] Building image ${FULL_IMAGE} from services/common/Dockerfile ..."
+docker build -f services/common/Dockerfile -t "${FULL_IMAGE}" .
 
 if [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
   echo "[login] Logging in to Docker Hub as ${DOCKERHUB_USER} ..."

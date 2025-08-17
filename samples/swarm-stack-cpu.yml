@@ -1,28 +1,75 @@
-version: "3.8"
-
 services:
-  autoscaler:
-    ports:
-      - "8080:80"
-    image: clifford666/swarm-autoscaler:latest
+  service-registry:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
     environment:
-      - AUTOSCALER_DNSNAME=tasks.autoscaler
-      - AUTOSCALER_INTERVAL=1
-      - AUTOSCALER_DRYRUN=0
-      - LOG_LEVEL=INFO
-      - EVENTS_DB_PATH=/data/events.db
+      - ROLE=service-registry
+      - DOCKER_BASE_URL=unix:///var/run/docker.sock
+      - REFRESH_INTERVAL_SEC=30
+      - METRICS_REFRESH_INTERVAL_SEC=3
+      - LOG_LEVEL=DEBUG
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - autoscaler-events:/data
+    networks:
+      - autoscaler_net
     deploy:
-      mode: global
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 100M
+      mode: replicated
+      replicas: 1
+    ports:
+      - "5001:5001"
+
+  autoscaler:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=autoscaler
+      - DOCKER_SERVICE_URL=http://docker-service:5004
+      - SERVICE_REGISTRY_URL=http://service-registry:5001
+      - SCALE_COOLDOWN_SEC=10
+      - POLL_INTERVAL_SEC=30
+      - LOG_LEVEL=DEBUG
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+    ports:
+      - "5003:5003"
+
+  docker-service:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=docker-service
+      - DOCKER_BASE_URL=unix:///var/run/docker.sock
+      - DATABASE_URL=sqlite:////data/events.db
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker_service_data:/data
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+    # Optional: expose events API
+    ports:
+      - "5004:5004"
+
+  ui:
+    image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
+    environment:
+      - ROLE=ui
+      - DOCKER_SERVICE_URL=http://docker-service:5004
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: replicated
+      replicas: 1
+    ports:
+      - "8080:5005"
 
   sample_1:
     image: nginx:alpine
+    networks:
+      - autoscaler_net
     ports:
       - target: 80
         published: 8081
@@ -31,75 +78,71 @@ services:
     deploy:
       replicas: 2
       labels:
-        - "swarm.autoscale=true"
-        - "swarm.autoscale.metric=cpu"
-        - "swarm.autoscale.percentage-max=50"
-        - "swarm.autoscale.percentage-min=15"
-        - "swarm.autoscale.min=2"
-        - "swarm.autoscale.max=5"
-      resources:
-        limits:
-          cpus: '0.50'
+        - "autoscaler.enabled=true"
+        - "autoscaler.metric=cpu"
+        - "autoscaler.cpu.threshold=50"
+        - "autoscaler.min=2"
+        - "autoscaler.max=5"
 
-  sample_2:
-    image: nginx:alpine
-    ports:
-      - target: 80
-        published: 8082
-        protocol: tcp
-        mode: ingress
-    deploy:
-      replicas: 2
-      labels:
-        - "swarm.autoscale=true"
-        - "swarm.autoscale.metric=cpu"
-        - "swarm.autoscale.percentage-max=50"
-        - "swarm.autoscale.percentage-min=15"
-        - "swarm.autoscale.min=2"
-        - "swarm.autoscale.max=5"
-      resources:
-        limits:
-          cpus: '0.50'
+  # sample_2:
+  #   image: nginx:alpine
+  #   networks:
+  #     - autoscaler_net
+  #   ports:
+  #     - target: 80
+  #       published: 8082
+  #       protocol: tcp
+  #       mode: ingress
+  #   deploy:
+  #     replicas: 2
+  #     labels:
+  #       - "autoscaler.enabled=true"
+  #       - "autoscaler.metric=cpu"
+  #       - "autoscaler.cpu.threshold=50"
+  #       - "autoscaler.min=2"
+  #       - "autoscaler.max=5"
 
-  sample_3:
-    image: nginx:alpine
-    ports:
-      - target: 80
-        published: 8083
-        protocol: tcp
-        mode: ingress
-    deploy:
-      replicas: 2
-      labels:
-        - "swarm.autoscale=true"
-        - "swarm.autoscale.metric=cpu"
-        - "swarm.autoscale.percentage-max=50"
-        - "swarm.autoscale.percentage-min=15"
-        - "swarm.autoscale.min=2"
-        - "swarm.autoscale.max=5"
-      resources:
-        limits:
-          cpus: '0.50'
+  # sample_3:
+  #   image: nginx:alpine
+  #   networks:
+  #     - autoscaler_net
+  #   ports:
+  #     - target: 80
+  #       published: 8083
+  #       protocol: tcp
+  #       mode: ingress
+  #   deploy:
+  #     replicas: 2
+  #     labels:
+  #       - "autoscaler.enabled=true"
+  #       - "autoscaler.metric=cpu"
+  #       - "autoscaler.cpu.threshold=50"
+  #       - "autoscaler.min=2"
+  #       - "autoscaler.max=5"
 
-  sample_4:
-    image: nginx:alpine
-    ports:
-      - target: 80
-        published: 8084
-        protocol: tcp
-        mode: ingress
-    deploy:
-      replicas: 2
-      labels:
-        - "swarm.autoscale=true"
-        - "swarm.autoscale.metric=cpu"
-        - "swarm.autoscale.percentage-max=50"
-        - "swarm.autoscale.percentage-min=15"
-        - "swarm.autoscale.min=2"
-        - "swarm.autoscale.max=5"
-      resources:
-        limits:
-          cpus: '0.50'
-  
+  # sample_4:
+  #   image: nginx:alpine
+  #   networks:
+  #     - autoscaler_net
+  #   ports:
+  #     - target: 80
+  #       published: 8084
+  #       protocol: tcp
+  #       mode: ingress
+  #   deploy:
+  #     replicas: 2
+  #     labels:
+  #       - "autoscaler.enabled=true"
+  #       - "autoscaler.metric=cpu"
+  #       - "autoscaler.cpu.threshold=50"
+  #       - "autoscaler.min=2"
+  #       - "autoscaler.max=5"
+
+networks:
+  autoscaler_net:
+    driver: overlay
+    attachable: true
+
 volumes:
-  autoscaler-events:
+  docker_service_data:
+    driver: local

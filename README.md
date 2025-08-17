@@ -73,27 +73,27 @@ _**Services in docker swarm are configured via labels**_
 
 ## Local development
 
-Run locally with Docker Compose (recommended):
+Run locally with Docker Swarm (recommended):
 
 ```bash
-docker compose build
-docker compose up -d
-open http://localhost:8080
+# Deploy the development stack
+./samples/deploy.sh cpu
+open http://localhost:8081
 ```
 
 What this does:
-- Builds an image using Python 3.13 and installs dependencies with `uv`.
-- Runs the app with Gunicorn on port 80 and maps it to `localhost:8080`.
-- Mounts your source code (`./src`) into the container for quick edits (with `--reload`).
-- Mounts the Docker socket so the autoscaler can talk to the local Docker daemon.
-- Runs in dry-run mode by default to avoid scaling actions during dev.
+- Uses the unified `clifford666/swarm-autoscaler-suite` image
+- Runs all services (service-registry, autoscaler, docker-service, ui) with different roles
+- Mounts the Docker socket so the autoscaler can talk to the local Docker daemon
+- Runs in dry-run mode by default to avoid scaling actions during dev
 
-Environment variables (as used in `docker-compose.yml`):
+Environment variables (as used in the swarm stack):
 
 ```yaml
 services:
   autoscaler:
     environment:
+      - ROLE=autoscaler
       - AUTOSCALER_DNSNAME=autoscaler
       - AUTOSCALER_INTERVAL=30
       - AUTOSCALER_DRYRUN=1   # remove to enable real scaling
@@ -103,7 +103,7 @@ services:
 Stop and clean up:
 
 ```bash
-docker compose down
+./samples/down.sh cpu
 ```
 
 
@@ -175,16 +175,38 @@ deploy:
 
 ## Project layout
 
-- `src/main.py`: App bootstrap and Flask app factory. Starts the autoscaler thread.
-- `src/settings.py`: Centralized configuration from environment variables.
-- `src/logging_config.py`: Logging setup with optional `LOG_LEVEL`.
-- `src/docker_service.py`: Docker client operations and scaling logic.
-- `src/autoscaler_service.py`: Autoscaling loop/thread.
-- `src/discovery.py`: Cluster discovery and in-cluster requests.
-- `src/container_controller.py`: Flask API endpoints.
-- `docker-compose.yml`: Local development environment.
-- `swarm-deploy.yml`: Swarm deployment manifest (global service).
-- `Dockerfile`: Production-ready image using Gunicorn and `uv` for deps.
+### Core Services
+- `services/autoscaler/`: Main autoscaling service that evaluates and scales services
+- `services/service-registry/`: Unified service discovery and caching
+- `services/docker-service/`: Docker service operations and scaling logic
+- `services/ui/`: Web interface for monitoring and management
+- `services/common/`: Shared utilities and configurations
+
+
+
+### Architecture Overview
+
+The system uses a unified **Service Registry** that provides service discovery and caching:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Autoscaler    │    │ Service Registry │    │  Docker Service │
+│                 │    │                 │    │                 │
+│ - Evaluates     │◄──►│ - Discovery     │◄──►│ - Scaling       │
+│   metrics       │    │ - Caching       │    │   operations    │
+│ - Makes scaling │    │ - REST API      │    │ - Service mgmt  │
+│   decisions     │    │ - Event pub     │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Service Registry Features
+- **Unified Discovery**: Automatically discovers Docker Swarm services with autoscaler labels
+- **In-Memory Caching**: Maintains a constant pool of discovered services for low-latency access
+- **HTTP/2 REST API**: Fast, modern API for querying services and metrics
+- **Event Publishing**: Optional RabbitMQ integration for real-time updates
+- **Metrics Collection**: Docker stats-based metrics collection
+
+See `services/service-registry/README.md` for detailed documentation.
 
 ## Samples
 
@@ -248,8 +270,8 @@ CPU sample (port 8081): generate concurrent requests to push CPU usage:
 # Using hey (macOS: brew install hey)
 hey -z 2m -c 200 http://localhost:8081/
 
-# Or using ApacheBench (ab)
-ab -n 100000 -c 200 http://localhost:8081/
+
+hey -z 2m -c 200 http://localhost:8082/
 ```
 
 Memory sample (port 8082): nginx is light on memory by default. You can temporarily stress memory to trigger scaling:
