@@ -58,6 +58,7 @@ services:
     environment:
       - ROLE=ui
       - DOCKER_SERVICE_URL=http://docker-service:5004
+      - LOG_LEVEL=DEBUG
     networks:
       - autoscaler_net
     deploy:

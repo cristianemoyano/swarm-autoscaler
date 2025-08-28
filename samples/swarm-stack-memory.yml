@@ -6,6 +6,7 @@ services:
       - DOCKER_BASE_URL=unix:///var/run/docker.sock
       - REFRESH_INTERVAL_SEC=30
       - METRICS_REFRESH_INTERVAL_SEC=60
+      - LOG_LEVEL=DEBUG
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -22,6 +23,7 @@ services:
       - SERVICE_REGISTRY_URL=http://service-registry:5001
       - SCALE_COOLDOWN_SEC=60
       - POLL_INTERVAL_SEC=30
+      - LOG_LEVEL=DEBUG
     networks:
       - autoscaler_net
     deploy:
@@ -34,6 +36,7 @@ services:
       - ROLE=docker-service
       - DOCKER_BASE_URL=unix:///var/run/docker.sock
       - DATABASE_URL=sqlite:////data/events.db
+      - LOG_LEVEL=DEBUG
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - docker_service_data:/data
@@ -48,6 +51,7 @@ services:
     environment:
       - ROLE=ui
       - DOCKER_SERVICE_URL=http://docker-service:5004
+      - LOG_LEVEL=DEBUG
     networks:
       - autoscaler_net
     deploy:
