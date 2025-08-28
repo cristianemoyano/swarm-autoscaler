@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Optional
+import sys
 
 _is_configured = False
 
@@ -18,7 +19,15 @@ def configure_logging(default_level: str = "INFO") -> None:
     if _is_configured:
         return
 
+    # Get and validate LOG_LEVEL
     level_name = os.getenv("LOG_LEVEL", default_level).upper()
+
+    # Validate that the level is valid
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if level_name not in valid_levels:
+        print(f"Warning: Invalid LOG_LEVEL '{level_name}'. Using default '{default_level}'. Valid levels: {', '.join(valid_levels)}", file=sys.stderr)
+        level_name = default_level.upper()
+    
     level = getattr(logging, level_name, logging.INFO)
 
     root = logging.getLogger()
@@ -39,6 +48,11 @@ def configure_logging(default_level: str = "INFO") -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     _is_configured = True
+
+    # Log the configuration that was applied
+    role = os.getenv("ROLE", "app")
+    logger = logging.getLogger(f"{role}.logging_config")
+    logger.info(f"logging configured with level={level_name} (numeric={level})")
 
 
 def get_logger(service_role: str, name: Optional[str] = None) -> logging.LoggerAdapter:
