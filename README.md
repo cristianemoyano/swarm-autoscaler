@@ -15,10 +15,19 @@
 
 The project is an application that implements the ability to dynamically change the number of service instances under high load. The application receives all services that have the `swarm.autoscale` label enabled, calculates the average value of the CPU utilization and, based on this, either increases the number of instances or decreases it.
 
-Currently, only the CPU is used for autoscaling in the project. By default, if the CPU load reaches 85%, the service will scale, if it reaches 25%, it will be scaled down.
+Currently, both CPU and memory metrics are supported for autoscaling. By default, if the CPU load reaches 85%, the service will scale, if it reaches 25%, it will be scaled down.
 But the minimum and maximum values ​​of CPU utilization can be changed through environment variables.
 
 Also, for each service, you can set the maximum and minimum number of replicas to prevent a situation with an uncontrolled increase in the number of replicas (or too much decrease)
+
+### Metrics Sources
+
+The autoscaler supports two metrics sources:
+
+1. **Docker API** (default): Uses Docker's stats API to collect metrics
+2. **cAdvisor** (recommended): Uses cAdvisor for more efficient metric collection with minimal impact on the Docker daemon
+
+For production environments, we recommend using cAdvisor as it provides better performance and scalability. See [CADVISOR_INTEGRATION.md](CADVISOR_INTEGRATION.md) for detailed setup instructions.
 
 ## Usage
 

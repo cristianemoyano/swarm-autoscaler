@@ -1,11 +1,36 @@
 services:
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    command:
+      - --docker_only=true
+      - --disable_metrics=disk,diskIO
+      - --housekeeping_interval=10s
+      - --max_housekeeping_interval=30s
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - autoscaler_net
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+    ports:
+      - "8080:8080"
+
   service-registry:
     image: ${SUITE_IMAGE:-clifford666/swarm-autoscaler-suite}:${SUITE_TAG:-latest}
     environment:
       - ROLE=service-registry
       - DOCKER_BASE_URL=unix:///var/run/docker.sock
       - REFRESH_INTERVAL_SEC=30
-      - METRICS_REFRESH_INTERVAL_SEC=3
+      - METRICS_REFRESH_INTERVAL_SEC=30
+      - METRICS_SOURCE=cadvisor
+      - CADVISOR_URL=http://cadvisor:8080
       - LOG_LEVEL=DEBUG
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
