@@ -99,6 +99,7 @@ class CacheManager:
         """Refresh metrics for specified services or all services."""
         try:
             services_to_update = service_names or [s.get("name") for s in self._services_cache]
+            updated_count = 0
             
             for service_name in services_to_update:
                 if not service_name:
@@ -108,8 +109,18 @@ class CacheManager:
                 if metrics:
                     with self._cache_lock:
                         self._metrics_cache[service_name] = metrics
+                        updated_count += 1
+                        
+                        # Log memory metrics if available
+                        if "memory_bytes" in metrics:
+                            mem_bytes = metrics.get("memory_bytes", 0)
+                            cpu_pct = metrics.get("cpu_pct", 0.0)
+                            self.logger.debug(
+                                f"cached metrics for {service_name}: "
+                                f"cpu={cpu_pct:.1f}% mem={mem_bytes/1024/1024:.1f}MB"
+                            )
             
-            self.logger.debug(f"refreshed metrics for {len(services_to_update)} services")
+            self.logger.debug(f"refreshed metrics for {updated_count}/{len(services_to_update)} services")
             
         except Exception as e:
             self.logger.error(f"failed to refresh metrics: {e}")

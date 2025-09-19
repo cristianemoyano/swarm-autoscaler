@@ -207,7 +207,15 @@ class DockerSwarmAdapter:
         """Get current metrics for a service using Docker API."""
         self.logger.debug(f"Getting metrics for service: {service_name}")
         result = self.get_metrics_from_docker(service_name)
-        self.logger.debug(f"Docker metrics for {service_name}: {result is not None}")
+        if result:
+            cpu_pct = result.get("cpu_pct", 0.0)
+            mem_bytes = result.get("memory_bytes", 0.0)
+            self.logger.debug(
+                f"Docker metrics for {service_name}: cpu={cpu_pct:.1f}% "
+                f"mem={mem_bytes/1024/1024:.1f}MB source=docker"
+            )
+        else:
+            self.logger.debug(f"No Docker metrics available for {service_name}")
         return result
     
     def watch_events(self, callback: Callable[[str, str], None]) -> None:

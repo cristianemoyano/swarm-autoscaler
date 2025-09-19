@@ -61,13 +61,27 @@ def create_app() -> Flask:
         cpu_pct = float(metrics.get("cpu_pct", 0.0))
         mem_bytes = float(metrics.get("memory_bytes", 0.0))
         mem_pct = 0.0
+        mem_limit = 0.0
         try:
-            # Placeholder: if memory limit known via labels, compute percent; else skip
+            # Get memory limit from labels
             mem_limit = float(service.get("labels", {}).get("autoscaler.memory.limit_bytes", 0))
             if mem_limit > 0:
                 mem_pct = (mem_bytes / mem_limit) * 100.0
-        except Exception:
+            elif metric_type == "memory":
+                logger.warning(
+                    f"service {service_name} uses memory metric but has no memory limit configured "
+                    f"(autoscaler.memory.limit_bytes=0), memory percentage will be 0%"
+                )
+        except Exception as e:
+            logger.warning(f"error calculating memory percentage for {service_name}: {e}")
             mem_pct = 0.0
+
+        # Log service configuration and current metrics
+        logger.info(
+            f"evaluating service={service_name} metric={metric_type} replicas={current_replicas} "
+            f"cpu={cpu_pct:.1f}% mem={mem_bytes/1024/1024:.1f}MB/{mem_limit/1024/1024:.1f}MB "
+            f"mem_pct={mem_pct:.1f}% threshold={thresholds.get(metric_type, 70.0)}%"
+        )
 
         desired = current_replicas
         reason = "no-op"
@@ -88,7 +102,18 @@ def create_app() -> Flask:
                 reason = f"mem {mem_pct:.1f}% < half threshold"
 
         if desired == current_replicas:
-            logger.debug(f"no-op service={service_name} replicas={current_replicas} cpu={cpu_pct:.1f}% threshold={thresholds.get('cpu')}% half_threshold={float(thresholds.get('cpu', 70.0)) * 0.5:.1f}%")
+            if metric_type == "memory":
+                logger.debug(
+                    f"no-op service={service_name} replicas={current_replicas} "
+                    f"mem={mem_pct:.1f}% threshold={thresholds.get('memory')}% "
+                    f"half_threshold={float(thresholds.get('memory', 70.0)) * 0.5:.1f}%"
+                )
+            else:
+                logger.debug(
+                    f"no-op service={service_name} replicas={current_replicas} "
+                    f"cpu={cpu_pct:.1f}% threshold={thresholds.get('cpu')}% "
+                    f"half_threshold={float(thresholds.get('cpu', 70.0)) * 0.5:.1f}%"
+                )
             return
 
         if not should_scale(service_name):
@@ -119,6 +144,7 @@ def create_app() -> Flask:
     def autoscaler_polling_loop() -> None:
         """Background loop that polls Service Registry and evaluates services."""
         logger.info(f"starting autoscaler polling loop with interval={poll_interval_sec}s")
+        logger.info(f"autoscaler configuration: cooldown={cooldown_sec}s async_scale={async_scale}")
         
         while running:
             try:
@@ -142,6 +168,15 @@ def create_app() -> Flask:
                         if metrics_resp.status_code == 200:
                             metrics_data = metrics_resp.json()
                             metrics = metrics_data.get("metrics", {})
+                            
+                            # Log metrics source and values
+                            source = metrics.get("source", "unknown")
+                            cpu_pct = metrics.get("cpu_pct", 0.0)
+                            mem_bytes = metrics.get("memory_bytes", 0.0)
+                            logger.debug(
+                                f"metrics for {service_name}: source={source} "
+                                f"cpu={cpu_pct:.1f}% mem={mem_bytes/1024/1024:.1f}MB"
+                            )
                             
                             # Evaluate the service
                             evaluate_service(service, metrics)
