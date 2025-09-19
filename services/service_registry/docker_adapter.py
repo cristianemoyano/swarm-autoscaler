@@ -150,48 +150,62 @@ class DockerSwarmAdapter:
     def get_metrics_from_cadvisor(self, service_name: str) -> Optional[Dict[str, Any]]:
         """Get metrics from cAdvisor for a service."""
         try:
-            container_ids = self.get_service_containers(service_name)
-            if not container_ids:
+            # Get all containers from cAdvisor once
+            resp = requests.get(f"{self.cadvisor_url}/api/v1.3/containers", timeout=5)
+            if resp.status_code != 200:
+                self.logger.warning(f"Failed to get containers from cAdvisor: {resp.status_code}")
+                return None
+            
+            root_container = resp.json()
+            
+            # Find all Docker containers in the hierarchy
+            def find_docker_containers(container_obj, containers=None):
+                if containers is None:
+                    containers = []
+                
+                if container_obj.get("name", "").startswith("/docker/"):
+                    containers.append(container_obj)
+                
+                if "subcontainers" in container_obj:
+                    for subcontainer in container_obj["subcontainers"]:
+                        find_docker_containers(subcontainer, containers)
+                
+                return containers
+            
+            docker_containers = find_docker_containers(root_container)
+            self.logger.debug(f"Found {len(docker_containers)} Docker containers in cAdvisor")
+            
+            if not docker_containers:
+                return None
+            
+            # Filter containers by service name
+            service_containers = []
+            for container in docker_containers:
+                container_name = container.get("name", "")
+                # Check if this container belongs to our service
+                if service_name in container_name or f"{service_name}." in container_name:
+                    service_containers.append(container)
+                    self.logger.debug(f"Found service container: {container_name}")
+            
+            if not service_containers:
+                self.logger.debug(f"No containers found for service {service_name} in cAdvisor")
                 return None
             
             cpu_pcts: List[float] = []
             mem_usages: List[int] = []
             
-            for container_id in container_ids:
+            for container in service_containers:
                 try:
-                    # Get container metrics from cAdvisor using the correct API
-                    # First, get all containers and find the one with matching ID
-                    resp = requests.get(f"{self.cadvisor_url}/api/v1.3/containers", timeout=5)
-                    if resp.status_code != 200:
-                        continue
-                    
-                    containers = resp.json()
-                    container_data = None
-                    
-                    # Search for the container in the hierarchy
-                    def find_container(containers_list, target_id):
-                        for container in containers_list:
-                            if container.get("id") == target_id:
-                                return container
-                            if "subcontainers" in container:
-                                result = find_container(container["subcontainers"], target_id)
-                                if result:
-                                    return result
-                        return None
-                    
-                    container_data = find_container(containers, container_id)
-                    if not container_data:
-                        continue
-                    
-                    stats = container_data.get("stats", [])
+                    stats = container.get("stats", [])
                     if len(stats) < 2:
+                        self.logger.debug(f"Not enough stats for container {container.get('name')} (got {len(stats)})")
                         continue
                     
                     # Use the last two stats for delta calculation
                     current = stats[-1]
                     previous = stats[-2]
                     
-                    # Calculate CPU percentage (Docker style)
+                    # Calculate CPU percentage (cAdvisor style)
                     current_cpu = current.get("cpu", {}).get("usage", {})
                     previous_cpu = previous.get("cpu", {}).get("usage", {})
                     
@@ -210,8 +224,10 @@ class DockerSwarmAdapter:
                     cpu_pcts.append(float(perc))
                     mem_usages.append(int(memory_usage))
                     
+                    self.logger.debug(f"Container {container.get('name')}: CPU={perc:.2f}%, Memory={memory_usage}")
+                    
                 except Exception as e:
-                    self.logger.debug(f"failed to get cAdvisor metrics for container {container_id}: {e}")
+                    self.logger.debug(f"failed to process container {container.get('name')}: {e}")
                     continue
             
             if not cpu_pcts and not mem_usages:
@@ -219,6 +235,8 @@ class DockerSwarmAdapter:
             
             cpu_avg = sum(cpu_pcts) / len(cpu_pcts) if cpu_pcts else 0.0
             mem_avg = sum(mem_usages) / len(mem_usages) if mem_usages else 0
+            
+            self.logger.debug(f"Service {service_name}: CPU={cpu_avg:.2f}%, Memory={mem_avg}")
             
             return {
                 "cpu_pct": cpu_avg,
@@ -231,6 +249,7 @@ class DockerSwarmAdapter:
         except Exception as e:
             self.logger.warning(f"failed to get cAdvisor metrics for {service_name}: {e}")
             return None
+
     
     def get_metrics_from_docker(self, service_name: str) -> Optional[Dict[str, Any]]:
         """Get current metrics for a service via Docker stats."""
@@ -296,10 +315,15 @@ class DockerSwarmAdapter:
     
     def get_service_metrics(self, service_name: str) -> Optional[Dict[str, Any]]:
         """Get current metrics for a service using the configured source."""
+        self.logger.debug(f"Getting metrics for service: {service_name}")
         if self.use_cadvisor:
-            return self.get_metrics_from_cadvisor(service_name)
+            result = self.get_metrics_from_cadvisor(service_name)
+            self.logger.debug(f"cAdvisor metrics for {service_name}: {result is not None}")
+            return result
         else:
-            return self.get_metrics_from_docker(service_name)
+            result = self.get_metrics_from_docker(service_name)
+            self.logger.debug(f"Docker metrics for {service_name}: {result is not None}")
+            return result
     
     def watch_events(self, callback: Callable[[str, str], None]) -> None:
         """Watch Docker events and call the callback when service events occur."""

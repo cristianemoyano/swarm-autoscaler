@@ -11,6 +11,7 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - autoscaler_net
     deploy:
@@ -29,7 +30,7 @@ services:
       - REFRESH_INTERVAL_SEC=30
       - METRICS_REFRESH_INTERVAL_SEC=30
       - METRICS_SOURCE=cadvisor
-      - CADVISOR_URL=http://autoscale-cpu_cadvisor:8080
+      - CADVISOR_URL=http://cadvisor:8080
       - LOG_LEVEL=DEBUG
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
