@@ -24,8 +24,8 @@ services:
       - ROLE=autoscaler
       - DOCKER_SERVICE_URL=http://docker-service:5004
       - SERVICE_REGISTRY_URL=http://service-registry:5001
-      - SCALE_COOLDOWN_SEC=10
-      - POLL_INTERVAL_SEC=30
+      - SCALE_COOLDOWN_SEC=5
+      - POLL_INTERVAL_SEC=5
       - LOG_LEVEL=DEBUG
     networks:
       - autoscaler_net
