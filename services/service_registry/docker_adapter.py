@@ -159,13 +159,31 @@ class DockerSwarmAdapter:
             
             for container_id in container_ids:
                 try:
-                    # Get container metrics from cAdvisor
-                    resp = requests.get(f"{self.cadvisor_url}/api/v1.3/docker/{container_id}", timeout=5)
+                    # Get container metrics from cAdvisor using the correct API
+                    # First, get all containers and find the one with matching ID
+                    resp = requests.get(f"{self.cadvisor_url}/api/v1.3/containers", timeout=5)
                     if resp.status_code != 200:
                         continue
                     
-                    data = resp.json()
-                    stats = data.get("stats", [])
+                    containers = resp.json()
+                    container_data = None
+                    
+                    # Search for the container in the hierarchy
+                    def find_container(containers_list, target_id):
+                        for container in containers_list:
+                            if container.get("id") == target_id:
+                                return container
+                            if "subcontainers" in container:
+                                result = find_container(container["subcontainers"], target_id)
+                                if result:
+                                    return result
+                        return None
+                    
+                    container_data = find_container(containers, container_id)
+                    if not container_data:
+                        continue
+                    
+                    stats = container_data.get("stats", [])
                     if len(stats) < 2:
                         continue
                     
