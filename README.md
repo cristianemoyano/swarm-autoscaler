@@ -252,7 +252,7 @@ Watch the sample service tasks and overall service list:
 
 ```bash
 # CPU sample
-while true; do docker service ps autoscale-cpu_sample; sleep 5; clear; done
+while true; do docker service ps autoscale-cpu_autoscaler; sleep 5; clear; done
 
 # Memory sample
 while true; do docker service ps autoscale-mem_sample; sleep 5; clear; done
